@@ -452,6 +452,11 @@ function HomeTab({ user }: { user: User }) {
 
   return (
     <div className="space-y-5 pb-4">
+      {/* Urgency Banner */}
+      <div className="animate-pulse rounded-2xl bg-gradient-to-r from-red-500 via-orange-500 to-red-500 p-4 text-center text-white font-bold text-sm shadow-lg">
+        🔥 EARN UP TO ₹7,500 PER DAY — HURRY! LIMITED SPOTS! 🔥
+      </div>
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-primary to-emerald-600 rounded-2xl p-5 text-white">
         <p className="text-sm opacity-80">Welcome Back 👋</p>
@@ -503,7 +508,14 @@ function HomeTab({ user }: { user: User }) {
           </p>
           <ul className="text-xs text-amber-700 mt-2 space-y-1">
             <li>• Complete Tasks To Earn Coins</li>
-            <li>• Refer Friends To Earn 500 Coins Per Referral</li>
+            <li>
+              • Refer Friends To Earn 500 Coins On Signup + ₹50 Per Task They
+              Complete
+            </li>
+            <li>
+              • When Your Friend Completes A Task → You Get ₹50 (Refer Bonus)
+            </li>
+            <li>• Your Friend Also Gets ₹20 Bonus On Task Completion</li>
             <li>• 1000 Coins = ₹10 (Withdraw Via UPI)</li>
             <li>• Min ₹10, Max ₹250 Per Withdrawal</li>
             <li>• Max 5 Task Withdrawals Per Day</li>

@@ -46,6 +46,7 @@ import {
   saveCompletions,
   saveOTPStore,
   saveTasks,
+  saveUsers,
   saveWithdrawals,
   setAdminSession,
 } from "../utils/storage";
@@ -257,6 +258,9 @@ function DashboardTab() {
   const pendingCount = withdrawals.filter((w) => w.status === "pending").length;
 
   const handleConfirmCompletion = (completionId: string) => {
+    const completion = getCompletions().find((c) => c.id === completionId);
+
+    // Mark completion as confirmed
     const all = getCompletions().map((c) =>
       c.id === completionId
         ? {
@@ -268,7 +272,35 @@ function DashboardTab() {
     );
     saveCompletions(all);
     setCompletions(all);
-    toast.success("Task completion confirmed!");
+
+    // Referral bonus: give ₹50 (5000 coins) to referrer, ₹20 (2000 coins) to completing user
+    if (completion) {
+      const allUsers = getUsers();
+      const completingUser = allUsers.find((u) => u.id === completion.userId);
+      if (completingUser?.referredBy) {
+        const referrer = allUsers.find(
+          (u) => u.referralCode === completingUser.referredBy,
+        );
+        const updatedUsers = allUsers.map((u) => {
+          if (u.id === completingUser.id) {
+            return { ...u, referralCoinBalance: u.referralCoinBalance + 2000 }; // ₹20
+          }
+          if (referrer && u.id === referrer.id) {
+            return { ...u, referralCoinBalance: u.referralCoinBalance + 5000 }; // ₹50
+          }
+          return u;
+        });
+        saveUsers(updatedUsers);
+        setUsers(updatedUsers);
+        toast.success(
+          "Task confirmed! Referral bonuses awarded — Referrer +₹50, Friend +₹20",
+        );
+      } else {
+        toast.success("Task completion confirmed!");
+      }
+    } else {
+      toast.success("Task completion confirmed!");
+    }
   };
 
   return (
@@ -1216,7 +1248,11 @@ function WithdrawalTab({ type }: { type: "task" | "referral" }) {
 
 // ─── Users Tab ─────────────────────────────────────────────────────────────────
 function UsersTab() {
-  const users = getUsers();
+  const [users, setUsers] = useState(getUsers);
+  useEffect(() => {
+    const id = setInterval(() => setUsers(getUsers()), 2000);
+    return () => clearInterval(id);
+  }, []);
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">All Users ({users.length})</h2>
