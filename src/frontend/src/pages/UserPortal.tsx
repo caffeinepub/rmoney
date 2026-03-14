@@ -362,16 +362,18 @@ function AuthScreen({
       toast.error("PASSWORD MUST BE AT LEAST 4 CHARACTERS");
       return;
     }
+    if (!actor) {
+      toast.error("SERVER NOT READY. PLEASE WAIT A MOMENT AND TRY AGAIN.");
+      return;
+    }
     setRegBusy(true);
     try {
-      if (actor) {
-        const existing = await actor.getUserByPhone(regPhone);
-        if (existing && existing.length > 0) {
-          toast.error("NUMBER ALREADY REGISTERED. PLEASE LOGIN.");
-          setMode("login");
-          setLoginPhone(regPhone);
-          return;
-        }
+      const existing = await actor.getUserByPhone(regPhone);
+      if (existing && existing.length > 0) {
+        toast.error("NUMBER ALREADY REGISTERED. PLEASE LOGIN.");
+        setMode("login");
+        setLoginPhone(regPhone);
+        return;
       }
 
       const newUser = {
@@ -392,26 +394,19 @@ function AuthScreen({
         createdAt: BigInt(Date.now()),
       };
 
-      if (actor) {
-        try {
-          const ok = await actor.registerUser(newUser);
-          if (ok) {
-            await actor.savePassword(regPhone, regPassword);
-            toast.success("REGISTRATION SUCCESSFUL! WELCOME!");
-            onLogin(newUser.id);
-          } else {
-            toast.error("NUMBER ALREADY REGISTERED. PLEASE LOGIN.");
-            setMode("login");
-          }
-        } catch {
-          toast.success("REGISTRATION SUCCESSFUL! WELCOME!");
-          onLogin(newUser.id);
-        }
-      } else {
+      const ok = await actor.registerUser(newUser);
+      if (ok) {
+        await actor.savePassword(regPhone, regPassword);
+        setUserSession(newUser.id);
         toast.success("REGISTRATION SUCCESSFUL! WELCOME!");
         onLogin(newUser.id);
+      } else {
+        toast.error("NUMBER ALREADY REGISTERED. PLEASE LOGIN.");
+        setMode("login");
+        setLoginPhone(regPhone);
       }
-    } catch {
+    } catch (err) {
+      console.error("Registration error:", err);
       toast.error("REGISTRATION FAILED. PLEASE TRY AGAIN.");
     } finally {
       setRegBusy(false);
