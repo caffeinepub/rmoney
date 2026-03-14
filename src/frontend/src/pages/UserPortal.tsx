@@ -40,7 +40,10 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
   const [rName, setRName] = useState("");
   const [rPhone, setRPhone] = useState("");
   const [rEmail, setREmail] = useState("");
-  const [rRef, setRRef] = useState("");
+  const [rRef, setRRef] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("ref") ?? "";
+  });
   const [rOtp, setROtp] = useState("");
   const [rOtpSent, setROtpSent] = useState(false);
   const [rDisplayOtp, setRDisplayOtp] = useState("");
@@ -982,18 +985,63 @@ function ReferralTab({ user }: { user: User }) {
     });
   };
 
-  const shareText = `Join RMoney and earn real money! Use my referral code: ${user.referralCode} and get started. Download now!`;
+  const referralLink = `${window.location.origin}?ref=${user.referralCode}`;
+  const shareText = `JOIN RMONEY AND EARN REAL MONEY! USE MY REFERRAL CODE: ${user.referralCode}\nDOWNLOAD NOW: ${referralLink}`;
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(referralLink).then(() => {
+      toast.success("Referral link copied!");
+    });
+  };
+
+  const shareOnWhatsApp = () => {
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(shareText)}`,
+      "_blank",
+    );
+  };
+
+  const shareOnTelegram = () => {
+    window.open(
+      `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(`JOIN RMONEY AND EARN REAL MONEY! USE MY REFERRAL CODE: ${user.referralCode}`)}`,
+      "_blank",
+    );
+  };
+
+  const shareOnFacebook = () => {
+    window.open(
+      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(referralLink)}`,
+      "_blank",
+    );
+  };
+
+  const shareOnInstagram = () => {
+    navigator.clipboard.writeText(shareText).then(() => {
+      toast.success(
+        "Text copied! Open Instagram and paste in your story or bio.",
+      );
+    });
+  };
+
+  const shareOnGmail = () => {
+    window.open(
+      `mailto:?subject=${encodeURIComponent("JOIN RMONEY - EARN REAL MONEY!")}&body=${encodeURIComponent(shareText)}`,
+      "_blank",
+    );
+  };
 
   return (
     <div className="space-y-5 pb-4">
       {/* Referral Code Card */}
       <Card className="bg-gradient-to-br from-primary to-emerald-700 border-0 text-white">
         <CardContent className="pt-5 pb-5 text-center">
-          <p className="text-sm opacity-80 mb-2">Your Referral Code</p>
-          <p className="text-3xl font-bold font-mono tracking-widest mb-4">
+          <p className="text-sm opacity-80 mb-2 uppercase">
+            YOUR REFERRAL CODE
+          </p>
+          <p className="text-3xl font-bold font-mono tracking-widest mb-3">
             {user.referralCode}
           </p>
-          <div className="flex gap-2 justify-center">
+          <div className="flex gap-2 justify-center mb-4">
             <Button
               data-ocid="user.referral.copy_button"
               variant="secondary"
@@ -1001,23 +1049,70 @@ function ReferralTab({ user }: { user: User }) {
               onClick={copyCode}
               className="bg-white/20 text-white border-white/30 hover:bg-white/30"
             >
-              📋 Copy Code
+              📋 COPY CODE
             </Button>
             <Button
+              data-ocid="user.referral.copy_link_button"
               variant="secondary"
               size="sm"
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({ title: "RMoney", text: shareText });
-                } else {
-                  navigator.clipboard.writeText(shareText);
-                  toast.success("Share text copied!");
-                }
-              }}
+              onClick={copyLink}
               className="bg-white/20 text-white border-white/30 hover:bg-white/30"
             >
-              🔗 Share
+              🔗 COPY LINK
             </Button>
+          </div>
+          {/* Referral Link Display */}
+          <div className="bg-white/10 rounded-lg px-3 py-2 mb-4 text-xs font-mono break-all text-white/90">
+            {referralLink}
+          </div>
+          {/* Social Share Buttons */}
+          <p className="text-xs opacity-70 uppercase mb-2">SHARE VIA</p>
+          <div className="grid grid-cols-5 gap-2">
+            <button
+              type="button"
+              data-ocid="user.referral.whatsapp_button"
+              onClick={shareOnWhatsApp}
+              className="flex flex-col items-center gap-1 bg-[#25D366]/80 hover:bg-[#25D366] rounded-xl py-2 px-1 transition-all"
+            >
+              <span className="text-xl">💬</span>
+              <span className="text-[9px] font-bold text-white">WHATSAPP</span>
+            </button>
+            <button
+              type="button"
+              data-ocid="user.referral.telegram_button"
+              onClick={shareOnTelegram}
+              className="flex flex-col items-center gap-1 bg-[#2AABEE]/80 hover:bg-[#2AABEE] rounded-xl py-2 px-1 transition-all"
+            >
+              <span className="text-xl">✈️</span>
+              <span className="text-[9px] font-bold text-white">TELEGRAM</span>
+            </button>
+            <button
+              type="button"
+              data-ocid="user.referral.facebook_button"
+              onClick={shareOnFacebook}
+              className="flex flex-col items-center gap-1 bg-[#1877F2]/80 hover:bg-[#1877F2] rounded-xl py-2 px-1 transition-all"
+            >
+              <span className="text-xl">📘</span>
+              <span className="text-[9px] font-bold text-white">FACEBOOK</span>
+            </button>
+            <button
+              type="button"
+              data-ocid="user.referral.instagram_button"
+              onClick={shareOnInstagram}
+              className="flex flex-col items-center gap-1 bg-gradient-to-br from-[#f09433] via-[#e6683c] to-[#dc2743]/80 hover:opacity-90 rounded-xl py-2 px-1 transition-all"
+            >
+              <span className="text-xl">📸</span>
+              <span className="text-[9px] font-bold text-white">INSTAGRAM</span>
+            </button>
+            <button
+              type="button"
+              data-ocid="user.referral.gmail_button"
+              onClick={shareOnGmail}
+              className="flex flex-col items-center gap-1 bg-[#EA4335]/80 hover:bg-[#EA4335] rounded-xl py-2 px-1 transition-all"
+            >
+              <span className="text-xl">📧</span>
+              <span className="text-[9px] font-bold text-white">GMAIL</span>
+            </button>
           </div>
         </CardContent>
       </Card>
