@@ -19,6 +19,8 @@ export interface Task {
   sequence: number;
   title: string;
   description: string;
+  rules?: string; // step-by-step rules for completing the task
+  price?: number; // monetary price/value in ₹ (optional, separate from coins)
   url: string;
   apkImageUrl?: string;
   coinsReward: number;

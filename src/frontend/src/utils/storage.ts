@@ -132,13 +132,40 @@ export function generateUserId(): string {
   return `RM${digits}`;
 }
 
-export function generateReferralCode(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < 8; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+/**
+ * Generates a personalized referral code based on the user's name.
+ * Format: first 4-5 letters of name (uppercase) + 4 random alphanumeric chars.
+ * e.g. name "Rahul Kumar" → "RAHU3X9K"
+ * Ensures uniqueness by retrying if the code is already taken.
+ */
+export function generateReferralCode(name = ""): string {
+  const suffix = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  // Take up to 5 letters from the first word of the name, strip non-alpha
+  const namePart = name
+    .trim()
+    .split(" ")[0]
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, 5)
+    .padEnd(3, "R"); // minimum 3 chars if name is very short
+
+  const existingCodes = new Set(getUsers().map((u) => u.referralCode));
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    let rand = "";
+    for (let i = 0; i < 4; i++) {
+      rand += suffix[Math.floor(Math.random() * suffix.length)];
+    }
+    const code = `${namePart}${rand}`;
+    if (!existingCodes.has(code)) return code;
   }
-  return code;
+
+  // Fallback: fully random 8 chars
+  let fallback = "";
+  for (let i = 0; i < 8; i++) {
+    fallback += suffix[Math.floor(Math.random() * suffix.length)];
+  }
+  return fallback;
 }
 
 export function generateId(): string {

@@ -98,11 +98,13 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
     <div className="dark min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img
-            src="/assets/generated/rm-logo.dim_200x200.png"
-            alt="RMoney"
-            className="w-20 h-20 mx-auto mb-4 rounded-2xl"
-          />
+          <div className="w-24 h-24 mx-auto mb-4 rounded-2xl overflow-hidden">
+            <img
+              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1.jpeg"
+              alt="RMoney"
+              className="w-full h-full object-cover object-center scale-150"
+            />
+          </div>
           <h1 className="text-3xl font-display font-bold text-foreground">
             RMoney Admin
           </h1>
@@ -123,7 +125,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                   <Input
                     data-ocid="admin.login.input"
                     className="mt-1"
-                    placeholder="Enter mobile number"
+                    placeholder="Enter Mobile Number"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     type="tel"
@@ -133,7 +135,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                   <Label className="text-foreground">Password</Label>
                   <Input
                     className="mt-1"
-                    placeholder="Enter password"
+                    placeholder="Enter Password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -177,7 +179,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                       <Label className="text-foreground">Enter OTP</Label>
                       <Input
                         className="mt-1"
-                        placeholder="6-digit OTP"
+                        placeholder="6-Digit OTP"
                         value={enteredOtp}
                         onChange={(e) => setEnteredOtp(e.target.value)}
                       />
@@ -195,7 +197,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                     setOtpSent(false);
                   }}
                 >
-                  Back to Login
+                  Back To Login
                 </button>
               </>
             )}
@@ -291,7 +293,7 @@ function DashboardTab() {
                     colSpan={4}
                     className="text-center text-muted-foreground py-6"
                   >
-                    No task completions yet
+                    No Task Completions Yet
                   </TableCell>
                 </TableRow>
               )}
@@ -312,6 +314,8 @@ function TasksTab() {
     sequence: "",
     title: "",
     description: "",
+    rules: "",
+    price: "",
     url: "",
     apkImageUrl: "",
     coinsReward: "",
@@ -326,6 +330,8 @@ function TasksTab() {
       sequence: "",
       title: "",
       description: "",
+      rules: "",
+      price: "",
       url: "",
       apkImageUrl: "",
       coinsReward: "",
@@ -340,6 +346,8 @@ function TasksTab() {
       sequence: task.sequence.toString(),
       title: task.title,
       description: task.description,
+      rules: task.rules ?? "",
+      price: task.price?.toString() ?? "",
       url: task.url,
       apkImageUrl: task.apkImageUrl ?? "",
       coinsReward: task.coinsReward.toString(),
@@ -362,6 +370,8 @@ function TasksTab() {
               sequence: Number(form.sequence),
               title: form.title,
               description: form.description,
+              rules: form.rules || undefined,
+              price: form.price ? Number(form.price) : undefined,
               url: form.url,
               apkImageUrl: form.apkImageUrl,
               coinsReward: Number(form.coinsReward) || 100,
@@ -376,6 +386,8 @@ function TasksTab() {
         sequence: Number(form.sequence),
         title: form.title,
         description: form.description,
+        rules: form.rules || undefined,
+        price: form.price ? Number(form.price) : undefined,
         url: form.url,
         apkImageUrl: form.apkImageUrl,
         coinsReward: Number(form.coinsReward) || 100,
@@ -440,6 +452,11 @@ function TasksTab() {
                     </p>
                     <p className="text-xs text-accent-foreground font-medium">
                       🪙 {task.coinsReward} coins
+                      {task.price !== undefined && (
+                        <span className="ml-2 text-emerald-400 font-semibold">
+                          ₹{task.price}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -470,7 +487,7 @@ function TasksTab() {
         {sorted.length === 0 && (
           <Card data-ocid="admin.tasks.empty_state">
             <CardContent className="py-12 text-center text-muted-foreground">
-              No tasks yet. Add your first task.
+              No Tasks Yet. Add Your First Task.
             </CardContent>
           </Card>
         )}
@@ -511,7 +528,7 @@ function TasksTab() {
               <Input
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="Task title"
+                placeholder="Task Title"
               />
             </div>
             <div>
@@ -521,8 +538,28 @@ function TasksTab() {
                 onChange={(e) =>
                   setForm({ ...form, description: e.target.value })
                 }
-                placeholder="Task description"
+                placeholder="Task Description"
                 rows={2}
+              />
+            </div>
+            <div>
+              <Label>Task Rules</Label>
+              <Textarea
+                value={form.rules}
+                onChange={(e) => setForm({ ...form, rules: e.target.value })}
+                placeholder={
+                  "e.g.\n1. Download the app\n2. Register with your phone\n3. Complete the first order"
+                }
+                rows={4}
+              />
+            </div>
+            <div>
+              <Label>Price (₹)</Label>
+              <Input
+                type="number"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="0.00"
               />
             </div>
             <div>
@@ -696,7 +733,7 @@ function WalletTab() {
                     colSpan={5}
                     className="text-center text-muted-foreground py-6"
                   >
-                    No transactions yet
+                    No Transactions Yet
                   </TableCell>
                 </TableRow>
               )}
@@ -899,7 +936,7 @@ function WithdrawalTab({ type }: { type: "task" | "referral" }) {
                     colSpan={7}
                     className="text-center text-muted-foreground py-6"
                   >
-                    No pending requests
+                    No Pending Requests
                   </TableCell>
                 </TableRow>
               )}
@@ -1078,7 +1115,7 @@ function UsersTab() {
                     colSpan={7}
                     className="text-center text-muted-foreground py-6"
                   >
-                    No users registered yet
+                    No Users Registered Yet
                   </TableCell>
                 </TableRow>
               )}
@@ -1105,11 +1142,13 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       {/* Header */}
       <header className="border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 bg-background z-10">
         <div className="flex items-center gap-3">
-          <img
-            src="/assets/generated/rm-logo.dim_200x200.png"
-            alt="RMoney"
-            className="w-8 h-8 rounded-lg"
-          />
+          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+            <img
+              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1.jpeg"
+              alt="RMoney"
+              className="w-full h-full object-cover object-center scale-150"
+            />
+          </div>
           <span className="font-display font-bold text-xl text-foreground">
             RMoney Admin
           </span>
