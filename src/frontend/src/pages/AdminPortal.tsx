@@ -1,3 +1,4 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import type { Task, WithdrawalRequest } from "../types";
+import type { Task, TaskCompletion, WithdrawalRequest } from "../types";
 import {
   generateId,
   generateOTP,
@@ -42,6 +43,7 @@ import {
   getUsers,
   getWithdrawals,
   saveAdminWallet,
+  saveCompletions,
   saveOTPStore,
   saveTasks,
   saveWithdrawals,
@@ -56,6 +58,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [forgotPhone, setForgotPhone] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [enteredOtp, setEnteredOtp] = useState("");
+  const [displayOtp, setDisplayOtp] = useState("");
 
   const handleLogin = () => {
     if (phone === "9053405019" && password === "Rakhi5050") {
@@ -79,6 +82,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
       expiry: Date.now() + 5 * 60 * 1000,
     });
     toast.info(`OTP for demo: ${otp}`, { duration: 30000 });
+    setDisplayOtp(otp);
     setOtpSent(true);
   };
 
@@ -175,6 +179,19 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                   </Button>
                 ) : (
                   <>
+                    {displayOtp && (
+                      <div className="bg-emerald-900/30 border-2 border-emerald-500 rounded-xl p-3 text-center">
+                        <p className="text-xs text-emerald-400 font-medium mb-1">
+                          YOUR OTP CODE
+                        </p>
+                        <p className="text-3xl font-bold font-mono tracking-widest text-emerald-300">
+                          {displayOtp}
+                        </p>
+                        <p className="text-xs text-emerald-400 mt-1">
+                          Enter this code below to verify
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <Label className="text-foreground">Enter OTP</Label>
                       <Input
@@ -195,6 +212,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                   onClick={() => {
                     setForgotMode(false);
                     setOtpSent(false);
+                    setDisplayOtp("");
                   }}
                 >
                   Back To Login
@@ -210,12 +228,48 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
 
 // ─── Dashboard Tab ─────────────────────────────────────────────────────────────
 function DashboardTab() {
-  const wallet = getAdminWallet();
-  const users = getUsers();
-  const tasks = getTasks();
-  const completions = getCompletions();
-  const withdrawals = getWithdrawals();
+  const [wallet, setWallet] = useState(getAdminWallet);
+  const [users, setUsers] = useState(getUsers);
+  const [tasks, setTasksD] = useState(getTasks);
+  const [completions, setCompletions] =
+    useState<TaskCompletion[]>(getCompletions);
+  const [withdrawals, setWithdrawals] = useState(getWithdrawals);
+
+  const _refreshAll = () => {
+    setWallet(getAdminWallet());
+    setUsers(getUsers());
+    setTasksD(getTasks());
+    setCompletions(getCompletions());
+    setWithdrawals(getWithdrawals());
+  };
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setWallet(getAdminWallet());
+      setUsers(getUsers());
+      setTasksD(getTasks());
+      setCompletions(getCompletions());
+      setWithdrawals(getWithdrawals());
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
+
   const pendingCount = withdrawals.filter((w) => w.status === "pending").length;
+
+  const handleConfirmCompletion = (completionId: string) => {
+    const all = getCompletions().map((c) =>
+      c.id === completionId
+        ? {
+            ...c,
+            adminConfirmed: true,
+            adminConfirmedAt: new Date().toISOString(),
+          }
+        : c,
+    );
+    saveCompletions(all);
+    setCompletions(all);
+    toast.success("Task completion confirmed!");
+  };
 
   return (
     <div className="space-y-6">
@@ -264,6 +318,7 @@ function DashboardTab() {
                 <TableHead>User ID</TableHead>
                 <TableHead>Task</TableHead>
                 <TableHead>Completed At</TableHead>
+                <TableHead>Admin Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -284,13 +339,29 @@ function DashboardTab() {
                       <TableCell>
                         {new Date(c.completedAt).toLocaleString()}
                       </TableCell>
+                      <TableCell>
+                        {c.adminConfirmed ? (
+                          <Badge className="bg-green-600 text-white text-xs">
+                            ✓ Confirmed
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7"
+                            onClick={() => handleConfirmCompletion(c.id)}
+                          >
+                            Confirm
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
               {completions.length === 0 && (
                 <TableRow data-ocid="dashboard.empty_state">
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     className="text-center text-muted-foreground py-6"
                   >
                     No Task Completions Yet
@@ -771,6 +842,60 @@ function WalletTab() {
                 </SelectContent>
               </Select>
             </div>
+            {method === "UPI" && Number(amount) > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                  Open Payment App
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    onClick={() =>
+                      window.open(
+                        `upi://pay?pa=rmoney@upi&pn=RMoney&am=${amount}&cu=INR&tn=RMoney+Wallet+TopUp`,
+                        "_blank",
+                      )
+                    }
+                  >
+                    Google Pay
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    onClick={() =>
+                      window.open(
+                        `paytmmp://pay?pa=rmoney@upi&pn=RMoney&am=${amount}&cu=INR`,
+                        "_blank",
+                      )
+                    }
+                  >
+                    Paytm
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    onClick={() =>
+                      window.open(
+                        `phonepe://pay?pa=rmoney@upi&pn=RMoney&am=${amount}&cu=INR`,
+                        "_blank",
+                      )
+                    }
+                  >
+                    PhonePe
+                  </Button>
+                </div>
+                <p className="text-xs text-amber-400 text-center font-medium">
+                  TAP TO OPEN PAYMENT APP, THEN COME BACK AND CLICK ADD MONEY
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>
@@ -890,11 +1015,25 @@ function WithdrawalTab({ type }: { type: "task" | "referral" }) {
                   data-ocid={`admin.withdrawals.row.${idx + 1}`}
                 >
                   <TableCell>
-                    {w.userName}
-                    <br />
-                    <span className="text-xs text-muted-foreground">
-                      {w.userPhone}
-                    </span>
+                    {(() => {
+                      const usr = getUsers().find((u) => u.id === w.userId);
+                      return (
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-8 h-8">
+                            <AvatarImage src={usr?.profilePhoto} />
+                            <AvatarFallback className="text-xs">
+                              {w.userName.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-xs font-medium">{w.userName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {w.userPhone}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {w.userId}

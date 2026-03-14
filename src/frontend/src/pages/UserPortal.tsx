@@ -35,6 +35,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
   const [lPhone, setLPhone] = useState("");
   const [lOtp, setLOtp] = useState("");
   const [lOtpSent, setLOtpSent] = useState(false);
+  const [lDisplayOtp, setLDisplayOtp] = useState("");
   // Register state
   const [rName, setRName] = useState("");
   const [rPhone, setRPhone] = useState("");
@@ -42,6 +43,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
   const [rRef, setRRef] = useState("");
   const [rOtp, setROtp] = useState("");
   const [rOtpSent, setROtpSent] = useState(false);
+  const [rDisplayOtp, setRDisplayOtp] = useState("");
 
   const sendLoginOtp = () => {
     if (!lPhone || lPhone.length < 10) {
@@ -56,6 +58,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
     }
     const otp = generateOTP();
     saveOTPStore({ phone: lPhone, otp, expiry: Date.now() + 5 * 60 * 1000 });
+    setLDisplayOtp(otp);
     toast.info(`Your OTP (demo): ${otp}`, { duration: 30000 });
     setLOtpSent(true);
   };
@@ -96,6 +99,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
     }
     const otp = generateOTP();
     saveOTPStore({ phone: rPhone, otp, expiry: Date.now() + 5 * 60 * 1000 });
+    setRDisplayOtp(otp);
     toast.info(`Your OTP (demo): ${otp}`, { duration: 30000 });
     setROtpSent(true);
   };
@@ -202,6 +206,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                 </div>
                 {!lOtpSent ? (
                   <Button
+                    data-ocid="user.login.send_otp.button"
                     className="w-full bg-primary text-primary-foreground"
                     onClick={sendLoginOtp}
                   >
@@ -209,6 +214,18 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                   </Button>
                 ) : (
                   <>
+                    {/* OTP Display Box */}
+                    <div className="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-3 text-center">
+                      <p className="text-xs text-emerald-700 font-medium mb-1">
+                        YOUR OTP CODE
+                      </p>
+                      <p className="text-3xl font-bold font-mono tracking-widest text-emerald-600">
+                        {lDisplayOtp}
+                      </p>
+                      <p className="text-xs text-emerald-600 mt-1">
+                        Enter this code below
+                      </p>
+                    </div>
                     <div>
                       <Label>Enter OTP</Label>
                       <Input
@@ -229,7 +246,10 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                     <button
                       type="button"
                       className="text-xs text-primary w-full text-center"
-                      onClick={() => setLOtpSent(false)}
+                      onClick={() => {
+                        setLOtpSent(false);
+                        setLDisplayOtp("");
+                      }}
                     >
                       Resend OTP
                     </button>
@@ -248,7 +268,9 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => toast.info("Google login coming soon!")}
+                  onClick={() =>
+                    toast.error("GOOGLE LOGIN NOT AVAILABLE - USE PHONE OTP")
+                  }
                 >
                   <svg
                     className="w-4 h-4 mr-2"
@@ -319,6 +341,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                 </div>
                 {!rOtpSent ? (
                   <Button
+                    data-ocid="user.register.send_otp.button"
                     className="w-full bg-primary text-primary-foreground"
                     onClick={sendRegisterOtp}
                   >
@@ -326,6 +349,18 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                   </Button>
                 ) : (
                   <>
+                    {/* OTP Display Box */}
+                    <div className="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-3 text-center">
+                      <p className="text-xs text-emerald-700 font-medium mb-1">
+                        YOUR OTP CODE
+                      </p>
+                      <p className="text-3xl font-bold font-mono tracking-widest text-emerald-600">
+                        {rDisplayOtp}
+                      </p>
+                      <p className="text-xs text-emerald-600 mt-1">
+                        Enter this code below
+                      </p>
+                    </div>
                     <div>
                       <Label>Enter OTP</Label>
                       <Input
@@ -336,6 +371,7 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                       />
                     </div>
                     <Button
+                      data-ocid="user.register.submit_button"
                       className="w-full bg-primary text-primary-foreground"
                       onClick={verifyRegisterOtp}
                     >
@@ -344,7 +380,10 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                     <button
                       type="button"
                       className="text-xs text-primary w-full text-center"
-                      onClick={() => setROtpSent(false)}
+                      onClick={() => {
+                        setROtpSent(false);
+                        setRDisplayOtp("");
+                      }}
                     >
                       Resend OTP
                     </button>
@@ -353,7 +392,9 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => toast.info("Google login coming soon!")}
+                  onClick={() =>
+                    toast.error("GOOGLE LOGIN NOT AVAILABLE - USE PHONE OTP")
+                  }
                 >
                   <svg
                     className="w-4 h-4 mr-2"
@@ -499,9 +540,10 @@ function TasksTab({
     .filter((t) => t.active)
     .sort((a, b) => a.sequence - b.sequence);
   const completions = getCompletions();
-  const completed = new Set(
-    completions.filter((c) => c.userId === user.id).map((c) => c.taskId),
+  const completionMap = new Map(
+    completions.filter((c) => c.userId === user.id).map((c) => [c.taskId, c]),
   );
+  const completed = new Set(completionMap.keys());
 
   const handleComplete = (taskId: string, coins: number) => {
     if (completed.has(taskId)) return;
@@ -550,6 +592,11 @@ function TasksTab({
                       {done && (
                         <Badge className="text-xs bg-emerald-100 text-emerald-700 border-0">
                           ✓ Done
+                        </Badge>
+                      )}
+                      {completionMap.get(task.id)?.adminConfirmed === true && (
+                        <Badge className="text-xs bg-green-100 text-green-700 border-green-300">
+                          ✅ Admin Verified
                         </Badge>
                       )}
                     </div>

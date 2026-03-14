@@ -32,6 +32,8 @@ export interface TaskCompletion {
   userId: string;
   taskId: string;
   completedAt: string;
+  adminConfirmed?: boolean;
+  adminConfirmedAt?: string;
 }
 
 export interface WithdrawalRequest {
