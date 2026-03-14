@@ -1,400 +1,622 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertCircle,
+  Camera,
+  CheckCircle,
+  ChevronRight,
+  Coins,
+  Copy,
+  Home,
+  ListTodo,
+  Loader2,
+  LogOut,
+  Share2,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { User } from "../types";
+import type {
+  RMTask,
+  RMTaskCompletion,
+  RMUser,
+  RMWithdrawalRequest,
+} from "../backend.d";
+import { useUpload } from "../blob-storage/hooks";
+import { useActor } from "../hooks/useActor";
 import {
-  clearOTPForPhone,
   generateId,
   generateOTP,
   generateReferralCode,
   generateUserId,
-  getCompletions,
-  getOTPForPhone,
-  getTasks,
-  getUserById,
   getUserSession,
-  getUsers,
-  getWithdrawals,
-  saveCompletions,
-  saveOTPForPhone,
-  saveUsers,
-  saveWithdrawals,
+  isValidUpi,
   setUserSession,
   todayStr,
-  updateUser,
 } from "../utils/storage";
 
-// ─── OTP Login/Register ─────────────────────────────────────────────────────────
-function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
-  const [tab, setTab] = useState<"login" | "register">("login");
-  // Login state
-  const [lPhone, setLPhone] = useState("");
-  const [lOtp, setLOtp] = useState("");
-  const [lOtpSent, setLOtpSent] = useState(false);
-  // Register state
-  const [rName, setRName] = useState("");
-  const [rPhone, setRPhone] = useState("");
-  const [rEmail, setREmail] = useState("");
-  const [rRef, setRRef] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("ref") ?? "";
-  });
-  const [rOtp, setROtp] = useState("");
-  const [rOtpSent, setROtpSent] = useState(false);
+// Social brand colors
+const SOCIAL = [
+  {
+    name: "WHATSAPP",
+    color: "#25D366",
+    bg: "#25D366",
+    getUrl: (link: string) =>
+      `https://wa.me/?text=${encodeURIComponent(`Join RMoney and earn real money! Use my referral link: ${link}`)}`,
+    icon: "W",
+  },
+  {
+    name: "TELEGRAM",
+    color: "#0088CC",
+    bg: "#0088CC",
+    getUrl: (link: string) =>
+      `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("Join RMoney! Earn real money completing tasks!")}`,
+    icon: "T",
+  },
+  {
+    name: "FACEBOOK",
+    color: "#1877F2",
+    bg: "#1877F2",
+    getUrl: (link: string) =>
+      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`,
+    icon: "F",
+  },
+  {
+    name: "INSTAGRAM",
+    color: "#E1306C",
+    bg: "linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)",
+    getUrl: (_link: string) => "https://instagram.com",
+    icon: "I",
+  },
+  {
+    name: "GMAIL",
+    color: "#EA4335",
+    bg: "#EA4335",
+    getUrl: (link: string) =>
+      `mailto:?subject=Join RMoney!&body=${encodeURIComponent(`Join RMoney and earn real money! My referral link: ${link}`)}`,
+    icon: "G",
+  },
+];
 
-  const sendLoginOtp = () => {
-    if (!lPhone || lPhone.length < 10) {
-      toast.error("Enter valid phone number");
-      return;
-    }
-    const users = getUsers();
-    const user = users.find((u) => u.phone === lPhone);
-    if (!user) {
-      toast.error("Phone not registered. Please register first.");
-      return;
-    }
-    const otp = generateOTP();
-    saveOTPForPhone(lPhone, otp);
-    toast.success("OTP sent to your mobile number. Valid for 10 minutes.");
-    setLOtpSent(true);
-  };
+type Tab = "home" | "tasks" | "wallet" | "refer" | "profile";
 
-  const verifyLoginOtp = () => {
-    const store = getOTPForPhone(lPhone);
-    if (store && store.otp === lOtp) {
-      const user = getUsers().find((u) => u.phone === lPhone);
-      if (user) {
-        clearOTPForPhone(lPhone);
-        setUserSession(user.id);
-        onLogin(user.id);
-        toast.success(`Welcome back, ${user.name}!`);
-      }
-    } else {
-      toast.error("Invalid or expired OTP");
-    }
-  };
+export default function UserPortal() {
+  const { actor } = useActor();
+  const [userId, setUserId] = useState<string | null>(getUserSession);
+  const [user, setUser] = useState<RMUser | null>(null);
+  const [tasks, setTasks] = useState<RMTask[]>([]);
+  const [completions, setCompletions] = useState<RMTaskCompletion[]>([]);
+  const [allUsers, setAllUsers] = useState<RMUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("home");
+  const actorRef = useRef<any>(null);
 
-  const sendRegisterOtp = () => {
-    if (!rName.trim()) {
-      toast.error("Enter your name");
-      return;
-    }
-    if (!rPhone || rPhone.length < 10) {
-      toast.error("Enter valid phone number");
-      return;
-    }
-    const existing = getUsers().find((u) => u.phone === rPhone);
-    if (existing) {
-      toast.error("Phone already registered. Please login.");
-      return;
-    }
-    const otp = generateOTP();
-    saveOTPForPhone(rPhone, otp);
-    toast.success("OTP sent to your mobile number. Valid for 10 minutes.");
-    setROtpSent(true);
-  };
+  useEffect(() => {
+    if (actor) actorRef.current = actor;
+  }, [actor]);
 
-  const verifyRegisterOtp = () => {
-    const store = getOTPForPhone(rPhone);
-    if (store && store.otp === rOtp) {
-      clearOTPForPhone(rPhone);
-      const newUser: User = {
-        id: generateUserId(),
-        name: rName.trim(),
-        phone: rPhone,
-        email: rEmail.trim() || undefined,
-        profilePhoto: undefined,
-        upiId: undefined,
-        coinBalance: 0,
-        referralCoinBalance: 0,
-        referralCode: generateReferralCode(rName.trim()),
-        referredBy: rRef.trim() || undefined,
-        taskWithdrawalsToday: 0,
-        lastWithdrawalDate: "",
-        createdAt: new Date().toISOString(),
-      };
-      // Give 500 referral coins to referrer
-      if (rRef.trim()) {
-        const users = getUsers();
-        const referrer = users.find(
-          (u) => u.referralCode === rRef.trim().toUpperCase(),
-        );
-        if (referrer) {
-          referrer.referralCoinBalance += 500;
-          saveUsers(users.map((u) => (u.id === referrer.id ? referrer : u)));
-          toast.success("Your referrer earned 500 coins!");
-        }
-      }
-      const users = getUsers();
-      saveUsers([...users, newUser]);
-      setUserSession(newUser.id);
-      onLogin(newUser.id);
-      toast.success(
-        `Welcome to RMoney, ${newUser.name}! Your ID: ${newUser.id}`,
-      );
-    } else {
-      toast.error("Invalid or expired OTP");
+  const loadData = async () => {
+    const a = actorRef.current;
+    if (!a) return;
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const [result, t, c, u] = await Promise.all([
+        a.getUserById(userId),
+        a.getTasks(),
+        a.getCompletionsByUser(userId),
+        a.getAllUsers(),
+      ]);
+      if (result.length > 0) setUser(result[0]);
+      setTasks(t.filter((tk: RMTask) => tk.active));
+      setCompletions(c);
+      setAllUsers(u);
+    } catch (e) {
+      console.error("Load error", e);
+    } finally {
+      setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-[430px]">
-        <div className="text-center mb-8">
-          <div className="w-28 h-28 mx-auto mb-3 rounded-3xl shadow-coin overflow-hidden">
+  // biome-ignore lint/correctness/useExhaustiveDependencies: polling interval intentional
+  useEffect(() => {
+    if (!actor) return;
+    actorRef.current = actor;
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, [userId, actor]);
+
+  const handleLogout = () => {
+    setUserSession(null);
+    setUserId(null);
+    setUser(null);
+  };
+
+  if (loading && !user && userId) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{
+          background:
+            "linear-gradient(135deg, #ff6b35 0%, #f7c948 50%, #ff4d6d 100%)",
+        }}
+      >
+        <div className="text-center text-white">
+          <div className="w-20 h-20 rounded-full overflow-hidden mx-auto mb-4 border-4 border-white shadow-xl">
             <img
-              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1.jpeg"
-              alt="RMoney"
-              className="w-full h-full object-cover object-center scale-150"
+              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1-1.jpeg"
+              alt="RMMONEY"
+              className="w-full h-full object-cover scale-[2.2]"
             />
           </div>
-          <h1 className="text-3xl font-display font-bold text-gray-900">
-            RMoney
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Earn & Withdraw Real Money 💸
+          <p className="font-bold text-xl tracking-widest">RMMONEY ₹</p>
+          <Loader2 className="animate-spin mx-auto mt-4" size={28} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!userId || !user) {
+    return (
+      <AuthScreen
+        actor={actor}
+        onLogin={(id) => {
+          setUserId(id);
+          setUserSession(id);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="min-h-screen flex flex-col"
+      style={{
+        background:
+          "linear-gradient(135deg, #fff7ed 0%, #fef3c7 50%, #fff1f2 100%)",
+      }}
+    >
+      {/* Portrait warning */}
+      <div className="portrait-only-overlay hidden fixed inset-0 z-50 bg-black/90 items-center justify-center text-white text-center p-8">
+        <div>
+          <p className="text-3xl mb-4">🔄</p>
+          <p className="font-bold text-xl">PLEASE ROTATE YOUR PHONE</p>
+          <p className="text-sm mt-2 opacity-70">
+            This app works best in portrait mode
           </p>
         </div>
+      </div>
 
-        <Card className="shadow-xl border-0 overflow-hidden">
-          {/* Tab switcher */}
-          <div className="flex">
-            <button
-              type="button"
-              className={`flex-1 py-3 text-sm font-semibold transition-all ${tab === "login" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
-              onClick={() => setTab("login")}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              className={`flex-1 py-3 text-sm font-semibold transition-all ${tab === "register" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
-              onClick={() => setTab("register")}
-            >
-              Register
-            </button>
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-black text-white px-4 py-3 flex items-center justify-between shadow-lg">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-yellow-400">
+            <img
+              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1-1.jpeg"
+              alt="RM"
+              className="w-full h-full object-cover scale-[2.2]"
+            />
           </div>
+          <span className="font-bold text-lg tracking-widest text-yellow-400">
+            RMMONEY ₹
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">BALANCE</p>
+            <p className="font-bold text-yellow-400">
+              🪙 {Number(user.coinBalance)} = ₹
+              {(Number(user.coinBalance) / 100).toFixed(2)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="p-2 text-gray-400 hover:text-white"
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
+      </header>
 
-          <CardContent className="p-6 space-y-4">
-            {tab === "login" ? (
-              <>
-                <div>
-                  <Label>Phone Number</Label>
-                  <Input
-                    data-ocid="user.login.phone.input"
-                    type="tel"
-                    placeholder="10-Digit Mobile Number"
-                    value={lPhone}
-                    onChange={(e) => setLPhone(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                {!lOtpSent ? (
-                  <Button
-                    data-ocid="user.login.send_otp.button"
-                    className="w-full bg-primary text-primary-foreground"
-                    onClick={sendLoginOtp}
-                  >
-                    Send OTP
-                  </Button>
-                ) : (
-                  <>
-                    <div>
-                      <Label>Enter OTP</Label>
-                      <Input
-                        data-ocid="user.login.otp.input"
-                        placeholder="6-digit OTP"
-                        value={lOtp}
-                        onChange={(e) => setLOtp(e.target.value)}
-                        className="mt-1"
-                      />
-                    </div>
-                    <Button
-                      data-ocid="user.login.submit_button"
-                      className="w-full bg-primary text-primary-foreground"
-                      onClick={verifyLoginOtp}
-                    >
-                      Verify & Login
-                    </Button>
-                    <button
-                      type="button"
-                      className="text-xs text-primary w-full text-center"
-                      onClick={() => {
-                        setLOtpSent(false);
-                      }}
-                    >
-                      Resend OTP
-                    </button>
-                  </>
-                )}
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">
-                      or
-                    </span>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() =>
-                    toast.error("GOOGLE LOGIN NOT AVAILABLE - USE PHONE OTP")
-                  }
-                >
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    viewBox="0 0 24 24"
-                    aria-label="Google"
-                    role="img"
-                  >
-                    <title>Google</title>
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
-                  Sign In With Google
-                </Button>
-              </>
-            ) : (
-              <>
-                <div>
-                  <Label>Full Name *</Label>
-                  <Input
-                    placeholder="Your Name"
-                    value={rName}
-                    onChange={(e) => setRName(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Phone Number *</Label>
-                  <Input
-                    type="tel"
-                    placeholder="10-Digit Mobile Number"
-                    value={rPhone}
-                    onChange={(e) => setRPhone(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Gmail (optional)</Label>
-                  <Input
-                    type="email"
-                    placeholder="you@gmail.com"
-                    value={rEmail}
-                    onChange={(e) => setREmail(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label>Referral Code (optional)</Label>
-                  <Input
-                    placeholder="Friend's Referral Code"
-                    value={rRef}
-                    onChange={(e) => setRRef(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                {!rOtpSent ? (
-                  <Button
-                    data-ocid="user.register.send_otp.button"
-                    className="w-full bg-primary text-primary-foreground"
-                    onClick={sendRegisterOtp}
-                  >
-                    Send OTP
-                  </Button>
-                ) : (
-                  <>
-                    <div>
-                      <Label>Enter OTP</Label>
-                      <Input
-                        placeholder="6-digit OTP"
-                        value={rOtp}
-                        onChange={(e) => setROtp(e.target.value)}
-                        className="mt-1"
-                      />
-                    </div>
-                    <Button
-                      data-ocid="user.register.submit_button"
-                      className="w-full bg-primary text-primary-foreground"
-                      onClick={verifyRegisterOtp}
-                    >
-                      Verify & Register
-                    </Button>
-                    <button
-                      type="button"
-                      className="text-xs text-primary w-full text-center"
-                      onClick={() => {
-                        setROtpSent(false);
-                      }}
-                    >
-                      Resend OTP
-                    </button>
-                  </>
-                )}
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() =>
-                    toast.error("GOOGLE LOGIN NOT AVAILABLE - USE PHONE OTP")
-                  }
-                >
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    viewBox="0 0 24 24"
-                    aria-label="Google"
-                    role="img"
-                  >
-                    <title>Google</title>
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
-                  Sign Up With Google
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+      {/* Content */}
+      <main className="flex-1 overflow-y-auto pb-20">
+        {tab === "home" && (
+          <HomeTab user={user} completions={completions} tasks={tasks} />
+        )}
+        {tab === "tasks" && (
+          <TasksTab
+            user={user}
+            tasks={tasks}
+            completions={completions}
+            actor={actor}
+            actorRef={actorRef}
+            onRefresh={loadData}
+          />
+        )}
+        {tab === "wallet" && (
+          <WalletTab
+            user={user}
+            actor={actor}
+            actorRef={actorRef}
+            onRefresh={loadData}
+          />
+        )}
+        {tab === "refer" && <ReferTab user={user} allUsers={allUsers} />}
+        {tab === "profile" && (
+          <ProfileTab
+            user={user}
+            actor={actor}
+            actorRef={actorRef}
+            onRefresh={loadData}
+          />
+        )}
+      </main>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Admin?{" "}
-          <a href="/admin" className="text-primary font-medium hover:underline">
-            Go to Admin Portal
+      {/* Bottom Nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-black border-t border-gray-800 flex z-40">
+        {[
+          { id: "home" as Tab, icon: Home, label: "HOME" },
+          { id: "tasks" as Tab, icon: ListTodo, label: "TASKS" },
+          { id: "wallet" as Tab, icon: Wallet, label: "WALLET" },
+          { id: "refer" as Tab, icon: Users, label: "REFER" },
+          { id: "profile" as Tab, icon: Camera, label: "PROFILE" },
+        ].map(({ id, icon: Icon, label }) => (
+          <button
+            type="button"
+            key={id}
+            data-ocid={`nav.${id}.tab`}
+            onClick={() => setTab(id)}
+            className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-colors ${
+              tab === id ? "text-yellow-400" : "text-gray-500"
+            }`}
+          >
+            <Icon size={20} />
+            <span className="text-[9px] font-bold tracking-wider">{label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// AUTH SCREEN
+// ──────────────────────────────────────────────────────────────
+type AuthMode = "select" | "login" | "register";
+
+function AuthScreen({
+  actor,
+  onLogin,
+}: { actor: any; onLogin: (id: string) => void }) {
+  const [mode, setMode] = useState<AuthMode>("select");
+
+  // LOGIN state
+  const [loginPhone, setLoginPhone] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  // REGISTER state
+  const [regName, setRegName] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regBusy, setRegBusy] = useState(false);
+  const [refCode, setRefCode] = useState(
+    () => new URLSearchParams(window.location.search).get("ref") || "",
+  );
+
+  // LOGIN handler
+  const handleLogin = async () => {
+    if (!loginPhone.match(/^[6-9]\d{9}$/)) {
+      toast.error("ENTER VALID 10-DIGIT MOBILE NUMBER");
+      return;
+    }
+    if (!loginPassword.trim()) {
+      toast.error("ENTER YOUR PASSWORD");
+      return;
+    }
+    setLoginBusy(true);
+    try {
+      if (actor) {
+        const result = await actor.getUserByPhone(loginPhone);
+        if (!result || result.length === 0) {
+          toast.error("NUMBER NOT REGISTERED. PLEASE REGISTER FIRST.");
+          setMode("select");
+          return;
+        }
+        const valid = await actor.verifyPassword(loginPhone, loginPassword);
+        if (valid) {
+          toast.success("WELCOME BACK!");
+          onLogin(result[0].id);
+        } else {
+          toast.error("WRONG PASSWORD. TRY AGAIN.");
+        }
+      } else {
+        toast.error("SERVER NOT READY. PLEASE TRY AGAIN IN A MOMENT.");
+      }
+    } catch {
+      toast.error("LOGIN FAILED. PLEASE TRY AGAIN.");
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  // REGISTER handler
+  const handleRegister = async () => {
+    if (!regName.trim()) {
+      toast.error("ENTER YOUR FULL NAME");
+      return;
+    }
+    if (!regPhone.match(/^[6-9]\d{9}$/)) {
+      toast.error("ENTER VALID 10-DIGIT MOBILE NUMBER");
+      return;
+    }
+    if (!regPassword.trim() || regPassword.length < 4) {
+      toast.error("PASSWORD MUST BE AT LEAST 4 CHARACTERS");
+      return;
+    }
+    setRegBusy(true);
+    try {
+      if (actor) {
+        const existing = await actor.getUserByPhone(regPhone);
+        if (existing && existing.length > 0) {
+          toast.error("NUMBER ALREADY REGISTERED. PLEASE LOGIN.");
+          setMode("login");
+          setLoginPhone(regPhone);
+          return;
+        }
+      }
+
+      const newUser = {
+        id: generateId(),
+        phone: regPhone,
+        name: regName.trim().toUpperCase(),
+        userId: generateUserId(),
+        referralCode: generateReferralCode(regName),
+        referredBy: refCode.trim().toUpperCase(),
+        profilePhotoUrl: "",
+        upiId: "",
+        upiLocked: false,
+        coinBalance: BigInt(0),
+        referralCoinBalance: BigInt(0),
+        hasCompletedFirstTask: false,
+        taskWithdrawalsToday: BigInt(0),
+        lastWithdrawalDate: "",
+        createdAt: BigInt(Date.now()),
+      };
+
+      if (actor) {
+        try {
+          const ok = await actor.registerUser(newUser);
+          if (ok) {
+            await actor.savePassword(regPhone, regPassword);
+            toast.success("REGISTRATION SUCCESSFUL! WELCOME!");
+            onLogin(newUser.id);
+          } else {
+            toast.error("NUMBER ALREADY REGISTERED. PLEASE LOGIN.");
+            setMode("login");
+          }
+        } catch {
+          toast.success("REGISTRATION SUCCESSFUL! WELCOME!");
+          onLogin(newUser.id);
+        }
+      } else {
+        toast.success("REGISTRATION SUCCESSFUL! WELCOME!");
+        onLogin(newUser.id);
+      }
+    } catch {
+      toast.error("REGISTRATION FAILED. PLEASE TRY AGAIN.");
+    } finally {
+      setRegBusy(false);
+    }
+  };
+
+  const Logo = () => (
+    <div className="text-center mb-8">
+      <div className="w-24 h-24 rounded-full overflow-hidden mx-auto mb-3 border-4 border-white shadow-xl">
+        <img
+          src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1-1.jpeg"
+          alt="RMMONEY"
+          className="w-full h-full object-cover scale-[2.2]"
+        />
+      </div>
+      <h1 className="text-3xl font-black text-white tracking-widest">
+        RMMONEY ₹
+      </h1>
+      <p className="text-white/80 text-sm mt-1">EARN REAL MONEY EVERY DAY</p>
+    </div>
+  );
+
+  return (
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-5 py-8"
+      style={{
+        background:
+          "linear-gradient(135deg, #ff6b35 0%, #f7c948 50%, #ff4d6d 100%)",
+      }}
+    >
+      <div className="w-full max-w-sm">
+        <Logo />
+
+        {/* WELCOME SCREEN */}
+        {mode === "select" && (
+          <div className="bg-white rounded-2xl p-6 shadow-2xl space-y-4">
+            <h2 className="font-black text-xl text-center tracking-widest text-gray-800">
+              WELCOME TO RMMONEY!
+            </h2>
+            <p className="text-center text-gray-500 text-sm">
+              CHOOSE AN OPTION TO CONTINUE
+            </p>
+            <Button
+              data-ocid="auth.register_button"
+              onClick={() => setMode("register")}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black tracking-widest text-lg py-6"
+            >
+              NEW REGISTRATION
+            </Button>
+            <Button
+              data-ocid="auth.login_button"
+              onClick={() => setMode("login")}
+              variant="outline"
+              className="w-full border-2 border-orange-500 text-orange-600 font-black tracking-widest text-lg py-6"
+            >
+              LOGIN
+            </Button>
+          </div>
+        )}
+
+        {/* LOGIN SCREEN */}
+        {mode === "login" && (
+          <div className="bg-white rounded-2xl p-6 shadow-2xl space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                data-ocid="login.back_button"
+                onClick={() => setMode("select")}
+                className="text-orange-500 font-bold text-xl"
+              >
+                ←
+              </button>
+              <h2 className="font-black text-lg tracking-widest text-gray-800">
+                LOGIN
+              </h2>
+            </div>
+
+            <Input
+              data-ocid="login.phone.input"
+              placeholder="MOBILE NUMBER (10 DIGITS)"
+              value={loginPhone}
+              onChange={(e) => setLoginPhone(e.target.value.replace(/\D/g, ""))}
+              maxLength={10}
+              type="tel"
+              className="text-sm font-bold tracking-wider"
+            />
+
+            <Input
+              data-ocid="login.password.input"
+              placeholder="PASSWORD"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              type="password"
+              className="text-sm font-bold tracking-wider"
+            />
+
+            <Button
+              data-ocid="login.submit_button"
+              onClick={handleLogin}
+              disabled={loginBusy}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black tracking-widest py-5"
+            >
+              {loginBusy ? (
+                <Loader2 className="animate-spin mr-2" size={18} />
+              ) : null}
+              LOGIN
+            </Button>
+
+            <p className="text-center text-sm text-gray-500 pt-1">
+              NEW USER?{" "}
+              <button
+                type="button"
+                onClick={() => setMode("register")}
+                className="text-orange-500 font-bold underline"
+              >
+                REGISTER HERE
+              </button>
+            </p>
+          </div>
+        )}
+
+        {/* REGISTRATION SCREEN */}
+        {mode === "register" && (
+          <div className="bg-white rounded-2xl p-6 shadow-2xl space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                data-ocid="register.back_button"
+                onClick={() => setMode("select")}
+                className="text-orange-500 font-bold text-xl"
+              >
+                ←
+              </button>
+              <h2 className="font-black text-lg tracking-widest text-gray-800">
+                NEW REGISTRATION
+              </h2>
+            </div>
+
+            <Input
+              data-ocid="register.name.input"
+              placeholder="YOUR FULL NAME"
+              value={regName}
+              onChange={(e) => setRegName(e.target.value)}
+              className="font-bold uppercase tracking-wider"
+            />
+
+            <Input
+              data-ocid="register.phone.input"
+              placeholder="MOBILE NUMBER (10 DIGITS)"
+              value={regPhone}
+              onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ""))}
+              maxLength={10}
+              type="tel"
+              className="text-sm font-bold tracking-wider"
+            />
+
+            <Input
+              data-ocid="register.password.input"
+              placeholder="CREATE PASSWORD (MIN 4 CHARACTERS)"
+              value={regPassword}
+              onChange={(e) => setRegPassword(e.target.value)}
+              type="password"
+              className="text-sm font-bold tracking-wider"
+            />
+
+            <Input
+              data-ocid="register.ref.input"
+              placeholder="REFERRAL CODE (OPTIONAL)"
+              value={refCode}
+              onChange={(e) => setRefCode(e.target.value.toUpperCase())}
+              className="font-bold tracking-wider"
+            />
+
+            <Button
+              data-ocid="register.submit_button"
+              onClick={handleRegister}
+              disabled={regBusy}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black tracking-widest py-5"
+            >
+              {regBusy ? (
+                <Loader2 className="animate-spin mr-2" size={18} />
+              ) : null}
+              REGISTER
+            </Button>
+
+            <p className="text-center text-sm text-gray-500 pt-1">
+              ALREADY REGISTERED?{" "}
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className="text-orange-500 font-bold underline"
+              >
+                LOGIN HERE
+              </button>
+            </p>
+          </div>
+        )}
+
+        <p className="text-center text-white/60 text-xs mt-6">
+          © {new Date().getFullYear()}. Built with love using{" "}
+          <a
+            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+            className="underline"
+          >
+            caffeine.ai
           </a>
         </p>
       </div>
@@ -402,979 +624,691 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
   );
 }
 
-// ─── Home Tab ──────────────────────────────────────────────────────────────────
-function HomeTab({ user }: { user: User }) {
-  const completions = getCompletions().filter((c) => c.userId === user.id);
-  const referrals = getUsers().filter(
-    (u) => u.referredBy === user.referralCode,
-  );
-  const totalCoins = user.coinBalance + user.referralCoinBalance;
-  const totalRs = totalCoins / 100;
+// ──────────────────────────────────────────────────────────────
+// HOME TAB
+// ──────────────────────────────────────────────────────────────
+function HomeTab({
+  user,
+  completions,
+  tasks,
+}: { user: RMUser; completions: RMTaskCompletion[]; tasks: RMTask[] }) {
+  const confirmedCount = completions.filter(
+    (c) => c.status === "confirmed",
+  ).length;
+  const pendingCount = completions.filter((c) => c.status === "pending").length;
+  const balanceRs = (Number(user.coinBalance) / 100).toFixed(2);
+  const refBalanceRs = (Number(user.referralCoinBalance) / 100).toFixed(2);
+  const withdrawalsLeft = 5 - Number(user.taskWithdrawalsToday);
 
   return (
-    <div className="space-y-5 pb-4">
-      {/* Urgency Banner */}
-      <div className="animate-pulse rounded-2xl bg-gradient-to-r from-red-500 via-orange-500 to-red-500 p-4 text-center text-white font-bold text-sm shadow-lg">
-        🔥 EARN UP TO ₹7,500 PER DAY — HURRY! LIMITED SPOTS! 🔥
+    <div className="p-4 space-y-4" data-ocid="home.section">
+      {/* Balance Card */}
+      <div
+        className="rounded-2xl p-5 text-white shadow-xl"
+        style={{ background: "linear-gradient(135deg, #ff6b35, #f7c948)" }}
+      >
+        <p className="text-xs font-bold opacity-80 tracking-widest">
+          TOTAL BALANCE
+        </p>
+        <p className="text-4xl font-black mt-1">₹{balanceRs}</p>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-yellow-200 font-semibold">
+            🪙 {Number(user.coinBalance)} COINS
+          </span>
+          <span className="text-white/60 text-sm">(100 COINS = ₹1)</span>
+        </div>
+        <div className="mt-3 pt-3 border-t border-white/20 flex justify-between text-sm">
+          <div>
+            <p className="opacity-70 text-xs">REFERRAL EARNINGS</p>
+            <p className="font-bold">₹{refBalanceRs}</p>
+          </div>
+          <div className="text-right">
+            <p className="opacity-70 text-xs">WITHDRAWALS LEFT TODAY</p>
+            <p className="font-bold">{withdrawalsLeft}/5</p>
+          </div>
+        </div>
       </div>
 
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-primary to-emerald-600 rounded-2xl p-5 text-white">
-        <p className="text-sm opacity-80">Welcome Back 👋</p>
-        <h2 className="text-xl font-display font-bold mt-1">{user.name}</h2>
-        <p className="text-xs opacity-70 font-mono mt-0.5">{user.id}</p>
-        <div className="mt-4">
-          <div className="flex items-end gap-1">
-            <span className="text-4xl font-bold">₹{totalRs.toFixed(2)}</span>
-          </div>
-          <p className="text-xs opacity-70 mt-0.5">
-            🪙 {totalCoins} coins total
+      {/* Stats Grid */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+          <p className="text-2xl font-black text-orange-500">{tasks.length}</p>
+          <p className="text-[10px] font-bold text-gray-500 tracking-wider mt-1">
+            TOTAL TASKS
+          </p>
+        </div>
+        <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+          <p className="text-2xl font-black text-green-500">{confirmedCount}</p>
+          <p className="text-[10px] font-bold text-gray-500 tracking-wider mt-1">
+            COMPLETED
+          </p>
+        </div>
+        <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+          <p className="text-2xl font-black text-yellow-500">{pendingCount}</p>
+          <p className="text-[10px] font-bold text-gray-500 tracking-wider mt-1">
+            PENDING
           </p>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="text-center">
-          <CardContent className="pt-3 pb-3">
-            <p className="text-2xl font-bold text-primary">
-              {completions.length}
+      {/* User Info */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Avatar className="w-12 h-12 border-2 border-orange-300">
+            <AvatarImage src={user.profilePhotoUrl} />
+            <AvatarFallback className="bg-orange-100 text-orange-600 font-bold">
+              {user.name.charAt(0).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="font-bold tracking-wider text-sm">
+              {user.name.toUpperCase()}
             </p>
-            <p className="text-xs text-muted-foreground">Tasks Done</p>
-          </CardContent>
-        </Card>
-        <Card className="text-center">
-          <CardContent className="pt-3 pb-3">
-            <p className="text-2xl font-bold text-amber-500">
-              {referrals.length}
+            <p className="text-xs text-gray-500">{user.userId}</p>
+            <p className="text-xs text-orange-500 font-semibold">
+              REF: {user.referralCode}
             </p>
-            <p className="text-xs text-muted-foreground">Referrals</p>
-          </CardContent>
-        </Card>
-        <Card className="text-center">
-          <CardContent className="pt-3 pb-3">
-            <p className="text-2xl font-bold text-emerald-600">
-              ₹{totalRs.toFixed(2)}
-            </p>
-            <p className="text-xs text-muted-foreground">Earned</p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
-      {/* Referral Bonus Card */}
-      {(() => {
-        const referralBonusEarned =
-          getUsers().filter(
-            (u) =>
-              u.referredBy === user.referralCode && u.hasCompletedFirstTask,
-          ).length * 5000;
-        return (
-          <div
-            data-ocid="home.referral_bonus.card"
-            className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-4 text-white shadow-lg"
-          >
-            <p className="text-xs font-bold opacity-80 mb-1">
-              🎁 REFERRAL BONUS EARNED
-            </p>
-            <p className="text-3xl font-bold">
-              ₹{(user.referralCoinBalance / 100).toFixed(2)}
-            </p>
-            <p className="text-xs opacity-90 mt-1">
-              +₹{(referralBonusEarned / 100).toFixed(0)} BONUS CREDITED
-            </p>
-            <p className="text-xs opacity-75 mt-0.5">
-              {
-                getUsers().filter(
-                  (u) =>
-                    u.referredBy === user.referralCode &&
-                    u.hasCompletedFirstTask,
-                ).length
-              }{" "}
-              FRIENDS COMPLETED TASKS • ₹50 EACH
-            </p>
+      {/* How it works */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <h3 className="font-black text-sm tracking-widest mb-3">
+          HOW IT WORKS
+        </h3>
+        <div className="space-y-2 text-xs text-gray-600">
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">1.</span>
+            <span>COMPLETE TASKS & EARN COINS</span>
           </div>
-        );
-      })()}
-
-      {/* Pending / Approved Withdrawal Notifications */}
-      {(() => {
-        const myWithdrawals = getWithdrawals().filter(
-          (w) => w.userId === user.id,
-        );
-        const pendingCount = myWithdrawals.filter(
-          (w) => w.status === "pending",
-        ).length;
-        const recentApproved = myWithdrawals.find((w) => {
-          if (w.status !== "approved" || !w.processedAt) return false;
-          return (
-            Date.now() - new Date(w.processedAt).getTime() < 24 * 60 * 60 * 1000
-          );
-        });
-        return (
-          <>
-            {pendingCount > 0 && (
-              <div
-                data-ocid="home.pending_withdrawal.card"
-                className="rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 p-4 text-white shadow-md"
-              >
-                <p className="text-sm font-bold">
-                  ⏳ {pendingCount} WITHDRAWAL PENDING
-                </p>
-                <p className="text-xs opacity-90 mt-0.5">
-                  WAITING FOR ADMIN APPROVAL
-                </p>
-              </div>
-            )}
-            {recentApproved && (
-              <div
-                data-ocid="home.approved_withdrawal.card"
-                className="rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 p-4 text-white shadow-md"
-              >
-                <p className="text-sm font-bold">✅ WITHDRAWAL APPROVED</p>
-                <p className="text-xs opacity-90 mt-0.5">
-                  ₹{recentApproved.amountRs.toFixed(2)} SENT TO YOUR UPI
-                </p>
-              </div>
-            )}
-          </>
-        );
-      })()}
-
-      {/* Pending Task Completions Card */}
-      {(() => {
-        const pendingTaskCount = getCompletions().filter(
-          (c) => c.userId === user.id && !c.adminConfirmed,
-        ).length;
-        return pendingTaskCount > 0 ? (
-          <div
-            data-ocid="home.pending_tasks.card"
-            className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-400 p-4 text-white shadow-md"
-          >
-            <p className="text-sm font-bold">
-              ⏳ {pendingTaskCount} TASK{pendingTaskCount > 1 ? "S" : ""}{" "}
-              PENDING ADMIN CONFIRMATION
-            </p>
-            <p className="text-xs opacity-90 mt-0.5">
-              COINS WILL BE CREDITED AFTER APPROVAL
-            </p>
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">2.</span>
+            <span>
+              REFER FRIENDS — WHEN YOUR FRIEND COMPLETES 1 TASK, YOU GET 500
+              COINS (₹5)
+            </span>
           </div>
-        ) : null;
-      })()}
-
-      {/* Info Cards */}
-      <Card className="bg-amber-50 border-amber-200">
-        <CardContent className="pt-4 pb-4">
-          <p className="text-sm font-semibold text-amber-800">
-            💡 How It Works
-          </p>
-          <ul className="text-xs text-amber-700 mt-2 space-y-1">
-            <li>• COMPLETE TASKS TO EARN COINS</li>
-            <li>
-              • REFER FRIEND — WHEN YOUR FRIEND COMPLETES 1 TASK, YOU GET 500
-              COINS
-            </li>
-            <li>
-              • WHEN YOUR FRIEND COMPLETES A TASK → YOU GET 500 COINS (REFER
-              BONUS)
-            </li>
-            <li>• YOUR FRIEND ALSO GETS 200 COINS ON TASK COMPLETION</li>
-            <li>• 1000 COINS = ₹10 (WITHDRAW VIA UPI)</li>
-            <li>• MIN ₹10, MAX ₹250 PER WITHDRAWAL</li>
-            <li>• ONLY 5 WITHDRAWALS ALLOWED PER DAY</li>
-          </ul>
-        </CardContent>
-      </Card>
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">3.</span>
+            <span>WAIT FOR ADMIN APPROVAL</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">4.</span>
+            <span>YOUR FRIEND ALSO GETS 200 COINS (₹2) BONUS</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">5.</span>
+            <span>100 COINS = ₹1</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">6.</span>
+            <span>MINIMUM WITHDRAWAL ₹10, MAXIMUM ₹250</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-orange-500 font-bold">7.</span>
+            <span>MAXIMUM 5 WITHDRAWALS PER DAY ONLY</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ─── Tasks Tab ─────────────────────────────────────────────────────────────────
-function RulesCollapsible({ rules }: { rules: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mb-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-xs text-primary underline font-medium"
-      >
-        {open ? "Hide Rules ▲" : "View Rules ▼"}
-      </button>
-      {open && (
-        <p className="mt-1 text-xs text-muted-foreground bg-muted/50 rounded p-2 whitespace-pre-line">
-          {rules}
-        </p>
-      )}
-    </div>
-  );
-}
-
+// ──────────────────────────────────────────────────────────────
+// TASKS TAB
+// ──────────────────────────────────────────────────────────────
 function TasksTab({
   user,
-  onUserUpdate: _onUserUpdate,
-}: { user: User; onUserUpdate: (u: User) => void }) {
-  const tasks = getTasks()
-    .filter((t) => t.active)
-    .sort((a, b) => a.sequence - b.sequence);
-  const completions = getCompletions();
-  const completionMap = new Map(
-    completions.filter((c) => c.userId === user.id).map((c) => [c.taskId, c]),
-  );
-  const completed = new Set(completionMap.keys());
+  tasks,
+  completions,
+  actor,
+  actorRef,
+  onRefresh,
+}: {
+  user: RMUser;
+  tasks: RMTask[];
+  completions: RMTaskCompletion[];
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+}) {
+  const [submitting, setSubmitting] = useState<string | null>(null);
 
-  const handleComplete = (taskId: string) => {
-    if (completed.has(taskId)) return;
-    const newCompletion = {
-      id: generateId(),
-      userId: user.id,
-      taskId,
-      completedAt: new Date().toISOString(),
-    };
-    saveCompletions([...getCompletions(), newCompletion]);
-    toast.success("✅ TASK SUBMITTED — WAITING FOR ADMIN APPROVAL");
+  const getCompletion = (taskId: string) =>
+    completions.find((c) => c.taskId === taskId);
+
+  const handleSubmit = async (task: RMTask) => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    const existing = getCompletion(task.id);
+    if (existing) {
+      toast.info("ALREADY SUBMITTED FOR THIS TASK");
+      return;
+    }
+    setSubmitting(task.id);
+    try {
+      await a.submitCompletion({
+        id: generateId(),
+        userId: user.id,
+        taskId: task.id,
+        status: "pending",
+        submittedAt: BigInt(Date.now()),
+        confirmedAt: BigInt(0),
+      });
+      toast.success("TASK SUBMITTED! WAITING FOR ADMIN APPROVAL.");
+      onRefresh();
+    } catch {
+      toast.error("SUBMISSION FAILED. TRY AGAIN.");
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const sorted = [...tasks].sort(
+    (a, b) => Number(a.sequence) - Number(b.sequence),
+  );
+
+  if (sorted.length === 0) {
+    return (
+      <div className="p-6 text-center" data-ocid="tasks.empty_state">
+        <div className="text-6xl mb-4">📋</div>
+        <p className="font-bold text-gray-500 tracking-widest">
+          NO TASKS AVAILABLE YET
+        </p>
+        <p className="text-sm text-gray-400 mt-2">ADMIN WILL ADD TASKS SOON</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4" data-ocid="tasks.list">
+      <h2 className="font-black text-sm tracking-widest mb-4">
+        AVAILABLE TASKS
+      </h2>
+      <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
+        {sorted.map((task, idx) => {
+          const completion = getCompletion(task.id);
+          const isConfirmed = completion?.status === "confirmed";
+          const isPending = completion?.status === "pending";
+          const coinsRs = (Number(task.coinsReward) / 100).toFixed(2);
+
+          return (
+            <div
+              key={task.id}
+              data-ocid={`tasks.item.${idx + 1}`}
+              className="flex-shrink-0 w-72 bg-white rounded-2xl shadow-lg overflow-hidden border border-orange-100"
+            >
+              {/* Sequence badge */}
+              <div className="relative">
+                {task.imageUrl ? (
+                  <img
+                    src={task.imageUrl}
+                    alt={task.title}
+                    className="w-full h-36 object-cover"
+                  />
+                ) : (
+                  <div
+                    className="w-full h-36 flex items-center justify-center"
+                    style={{
+                      background: "linear-gradient(135deg, #ff6b35, #f7c948)",
+                    }}
+                  >
+                    <span className="text-5xl font-black text-white opacity-40">
+                      {idx + 1}
+                    </span>
+                  </div>
+                )}
+                <div className="absolute top-2 left-2 bg-black text-yellow-400 w-8 h-8 rounded-full flex items-center justify-center font-black text-sm">
+                  {idx + 1}
+                </div>
+                {isConfirmed && (
+                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                    <CheckCircle size={12} /> VERIFIED
+                  </div>
+                )}
+                {isPending && !isConfirmed && (
+                  <div className="absolute top-2 right-2 bg-yellow-400 text-black text-xs font-bold px-2 py-1 rounded-full">
+                    PENDING
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4">
+                <h3 className="font-black text-sm tracking-wide">
+                  {task.title.toUpperCase()}
+                </h3>
+                <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                  {task.description}
+                </p>
+                {task.rules && (
+                  <p className="text-xs text-orange-600 mt-2 font-semibold">
+                    {task.rules}
+                  </p>
+                )}
+
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-2 py-1">
+                    <span className="text-xs font-black text-yellow-700">
+                      🪙 {Number(task.coinsReward)} = ₹{coinsRs}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  {task.url && (
+                    <a
+                      href={task.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 text-center text-xs font-bold text-white rounded-lg py-2 px-3"
+                      style={{
+                        background: "linear-gradient(90deg, #ff6b35, #f7c948)",
+                      }}
+                    >
+                      OPEN TASK
+                    </a>
+                  )}
+                  {!isConfirmed && !isPending && (
+                    <button
+                      type="button"
+                      data-ocid={`tasks.submit_button.${idx + 1}`}
+                      onClick={() => handleSubmit(task)}
+                      disabled={!!submitting}
+                      className="flex-1 text-xs font-bold border-2 border-orange-400 text-orange-600 rounded-lg py-2 px-3 hover:bg-orange-50 disabled:opacity-50"
+                    >
+                      {submitting === task.id ? (
+                        <Loader2 className="animate-spin mx-auto" size={14} />
+                      ) : (
+                        "SUBMIT"
+                      )}
+                    </button>
+                  )}
+                  {isConfirmed && (
+                    <div className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-green-600">
+                      <CheckCircle size={14} /> ADMIN VERIFIED ✓
+                    </div>
+                  )}
+                  {isPending && !isConfirmed && (
+                    <div className="flex-1 flex items-center justify-center text-xs font-bold text-yellow-600">
+                      ⏳ AWAITING ADMIN
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// WALLET TAB
+// ──────────────────────────────────────────────────────────────
+function WalletTab({
+  user,
+  actor,
+  actorRef,
+  onRefresh,
+}: {
+  user: RMUser;
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [withdrawType, setWithdrawType] = useState<"task" | "referral">("task");
+  const [busy, setBusy] = useState(false);
+  const [withdrawals, setWithdrawals] = useState<RMWithdrawalRequest[]>([]);
+
+  useEffect(() => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    a.getWithdrawalsByUser(user.id)
+      .then(setWithdrawals)
+      .catch(() => {});
+  }, [user.id, actor, actorRef]);
+
+  const balanceRs = Number(user.coinBalance) / 100;
+  const refBalanceRs = Number(user.referralCoinBalance) / 100;
+  const withdrawalsLeft = Math.max(0, 5 - Number(user.taskWithdrawalsToday));
+  const today = todayStr();
+  const isNewDay = user.lastWithdrawalDate !== today;
+  const effectiveLeft = isNewDay ? 5 : withdrawalsLeft;
+
+  const handleWithdraw = async () => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    const amtNum = Number.parseFloat(amount);
+    if (Number.isNaN(amtNum) || amtNum < 10) {
+      toast.error("MINIMUM WITHDRAWAL ₹10");
+      return;
+    }
+    if (amtNum > 250) {
+      toast.error("MAXIMUM WITHDRAWAL ₹250");
+      return;
+    }
+    if (!user.upiId) {
+      toast.error("SET YOUR UPI ID IN PROFILE FIRST");
+      return;
+    }
+    if (effectiveLeft <= 0) {
+      toast.error("DAILY WITHDRAWAL LIMIT REACHED (5/DAY)");
+      return;
+    }
+    const sourceBalance = withdrawType === "task" ? balanceRs : refBalanceRs;
+    if (amtNum > sourceBalance) {
+      toast.error("INSUFFICIENT BALANCE");
+      return;
+    }
+    setBusy(true);
+    try {
+      const coins = BigInt(Math.round(amtNum * 100));
+      await a.requestWithdrawal({
+        id: generateId(),
+        userId: user.id,
+        userName: user.name,
+        userPhone: user.phone,
+        userUpiId: user.upiId,
+        coins,
+        amountRs: BigInt(Math.round(amtNum)),
+        withdrawalType: withdrawType,
+        status: "pending",
+        requestedAt: BigInt(Date.now()),
+        processedAt: BigInt(0),
+      });
+      const updatedUser: RMUser = {
+        ...user,
+        taskWithdrawalsToday: isNewDay
+          ? BigInt(1)
+          : BigInt(Number(user.taskWithdrawalsToday) + 1),
+        lastWithdrawalDate: today,
+        coinBalance:
+          withdrawType === "task"
+            ? BigInt(Number(user.coinBalance) - Number(coins))
+            : user.coinBalance,
+        referralCoinBalance:
+          withdrawType === "referral"
+            ? BigInt(Number(user.referralCoinBalance) - Number(coins))
+            : user.referralCoinBalance,
+      };
+      await a.updateUser(updatedUser);
+      setAmount("");
+      toast.success("WITHDRAWAL REQUEST SENT TO ADMIN!");
+      onRefresh();
+    } catch {
+      toast.error("WITHDRAWAL FAILED. TRY AGAIN.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="pb-4">
-      <h2 className="text-base font-semibold mb-3">Complete Tasks & Earn 💸</h2>
-      {tasks.length === 0 ? (
-        <Card data-ocid="user.tasks.empty_state">
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No Tasks Available Right Now
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x">
-          {tasks.map((task, idx) => {
-            const done = completed.has(task.id);
-            const rewardRs = (task.coinsReward / 100).toFixed(2);
-            return (
+    <div className="p-4 space-y-4" data-ocid="wallet.section">
+      {/* Balance Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div
+          className="rounded-xl p-4 text-white shadow-lg"
+          style={{ background: "linear-gradient(135deg, #ff6b35, #f7c948)" }}
+        >
+          <p className="text-[10px] font-bold opacity-80">TASK BALANCE</p>
+          <p className="text-2xl font-black mt-1">₹{balanceRs.toFixed(2)}</p>
+          <p className="text-xs opacity-70">🪙 {Number(user.coinBalance)}</p>
+        </div>
+        <div
+          className="rounded-xl p-4 text-white shadow-lg"
+          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)" }}
+        >
+          <p className="text-[10px] font-bold opacity-80">REFERRAL BALANCE</p>
+          <p className="text-2xl font-black mt-1">₹{refBalanceRs.toFixed(2)}</p>
+          <p className="text-xs opacity-70">
+            🪙 {Number(user.referralCoinBalance)}
+          </p>
+        </div>
+      </div>
+
+      {/* Withdrawal Form */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <h3 className="font-black text-sm tracking-widest mb-3">
+          WITHDRAW MONEY
+        </h3>
+        <div className="mb-3 p-2 bg-orange-50 rounded-lg">
+          <p className="text-xs font-bold text-orange-700">
+            WITHDRAWALS REMAINING TODAY: {effectiveLeft}/5
+          </p>
+        </div>
+
+        {!user.upiId && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex gap-2">
+            <AlertCircle
+              size={16}
+              className="text-red-500 flex-shrink-0 mt-0.5"
+            />
+            <p className="text-xs text-red-600 font-semibold">
+              SET UPI ID IN PROFILE TAB BEFORE WITHDRAWING
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-ocid="wallet.task.tab"
+              onClick={() => setWithdrawType("task")}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 transition-colors ${
+                withdrawType === "task"
+                  ? "bg-orange-500 text-white border-orange-500"
+                  : "border-orange-300 text-orange-600"
+              }`}
+            >
+              TASK EARNINGS
+            </button>
+            <button
+              type="button"
+              data-ocid="wallet.referral.tab"
+              onClick={() => setWithdrawType("referral")}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 transition-colors ${
+                withdrawType === "referral"
+                  ? "bg-purple-500 text-white border-purple-500"
+                  : "border-purple-300 text-purple-600"
+              }`}
+            >
+              REFERRAL EARNINGS
+            </button>
+          </div>
+
+          <Input
+            data-ocid="wallet.input"
+            type="number"
+            placeholder="AMOUNT IN ₹ (MIN ₹10, MAX ₹250)"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            min="10"
+            max="250"
+          />
+
+          <Button
+            data-ocid="wallet.submit_button"
+            onClick={handleWithdraw}
+            disabled={busy || !user.upiId || effectiveLeft <= 0}
+            className="w-full font-bold tracking-widest bg-orange-500 hover:bg-orange-600 text-white"
+          >
+            {busy ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              "REQUEST WITHDRAWAL"
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Withdrawal History */}
+      {withdrawals.length > 0 && (
+        <div className="bg-white rounded-xl p-4 shadow-sm">
+          <h3 className="font-black text-xs tracking-widest mb-3">
+            WITHDRAWAL HISTORY
+          </h3>
+          <div className="space-y-2">
+            {withdrawals.slice(0, 10).map((w, i) => (
               <div
-                key={task.id}
-                data-ocid={`user.tasks.item.${idx + 1}`}
-                className="flex-shrink-0 w-72 snap-start"
+                key={w.id}
+                data-ocid={`wallet.item.${i + 1}`}
+                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
               >
-                <Card
-                  className={`h-full ${done ? "opacity-70" : ""} border-2 ${done ? "border-primary/30" : "border-border"} shadow-sm`}
+                <div>
+                  <p className="text-xs font-bold">₹{Number(w.amountRs)}</p>
+                  <p className="text-[10px] text-gray-500">
+                    {w.withdrawalType.toUpperCase()}
+                  </p>
+                </div>
+                <Badge
+                  variant={
+                    w.status === "approved"
+                      ? "default"
+                      : w.status === "rejected"
+                        ? "destructive"
+                        : "secondary"
+                  }
+                  className="text-[10px]"
                 >
-                  <CardContent className="pt-4 pb-4 flex flex-col h-full">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">
-                        {task.sequence}
-                      </span>
-                      {done &&
-                        completionMap.get(task.id)?.adminConfirmed === true && (
-                          <Badge className="text-xs bg-green-100 text-green-700 border-green-300">
-                            ✅ ADMIN VERIFIED
-                          </Badge>
-                        )}
-                      {done &&
-                        completionMap.get(task.id)?.adminConfirmed !== true && (
-                          <Badge className="text-xs bg-amber-100 text-amber-700 border-amber-300">
-                            ⏳ PENDING APPROVAL
-                          </Badge>
-                        )}
-                    </div>
-                    {task.apkImageUrl && (
-                      <img
-                        src={task.apkImageUrl}
-                        alt={task.title}
-                        className="w-full h-24 object-cover rounded-lg mb-3"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                    )}
-                    <h3 className="font-semibold text-sm mb-1">{task.title}</h3>
-                    <p className="text-xs text-muted-foreground mb-2 flex-1">
-                      {task.description}
-                    </p>
-                    {task.rules && <RulesCollapsible rules={task.rules} />}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-base font-bold text-emerald-600">
-                          ₹{rewardRs}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          🪙 {task.coinsReward} coins
-                        </span>
-                      </div>
-                      <a
-                        href={task.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary underline"
-                      >
-                        Open Link
-                      </a>
-                    </div>
-                    {!done && (
-                      <Button
-                        data-ocid={`user.tasks.complete_button.${idx + 1}`}
-                        size="sm"
-                        className="w-full bg-primary text-primary-foreground"
-                        onClick={() => handleComplete(task.id)}
-                      >
-                        Mark Complete
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
+                  {w.status.toUpperCase()}
+                </Badge>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Wallet Tab ─────────────────────────────────────────────────────────────────
-function WalletTab({
-  user,
-  onUserUpdate,
-}: { user: User; onUserUpdate: (u: User) => void }) {
-  const [upiSave, setUpiSave] = useState(user.upiId ?? "");
-  const [taskUpi, setTaskUpi] = useState(user.upiId ?? "");
-  const [taskAmountRs, setTaskAmountRs] = useState("");
-  const [refUpi, setRefUpi] = useState(user.upiId ?? "");
-  const [refAmountRs, setRefAmountRs] = useState("");
+// ──────────────────────────────────────────────────────────────
+// REFER TAB
+// ──────────────────────────────────────────────────────────────
+function ReferTab({ user, allUsers }: { user: RMUser; allUsers: RMUser[] }) {
+  const referralLink = `${window.location.origin}?ref=${user.referralCode}`;
+  const referredUsers = allUsers.filter((u) => u.referredBy === user.id);
 
-  const isValidUpi = (upi: string) => {
-    // Formats: 9999999999@paytm | name@upi | name.surname@okaxis etc.
-    // prefix: digits or name chars, min 3, then @, then provider min 2 chars
-    const trimmed = upi.trim();
-    if (!trimmed.includes("@")) return false;
-    const [prefix, provider] = trimmed.split("@");
-    if (!prefix || !provider) return false;
-    const validPrefix = /^[a-zA-Z0-9._-]{3,}$/.test(prefix);
-    const validProvider = /^[a-zA-Z]{2,}$/.test(provider);
-    return validPrefix && validProvider;
+  const copyLink = () => {
+    navigator.clipboard
+      .writeText(referralLink)
+      .then(() => toast.success("LINK COPIED!"))
+      .catch(() => toast.error("COPY FAILED"));
   };
-
-  const saveUpi = () => {
-    if (user.upiId) return; // UPI ID is permanent, cannot be changed
-    if (!isValidUpi(upiSave)) {
-      toast.error("INVALID UPI ID! FORMAT: 9053405019@paytm OR name@upi");
-      return;
-    }
-    const updated = { ...user, upiId: upiSave.trim() };
-    updateUser(updated);
-    onUserUpdate(updated);
-    toast.success("UPI ID SAVED PERMANENTLY!");
-  };
-
-  const handleTaskWithdraw = () => {
-    const amountRs = Number(taskAmountRs);
-    const coins = Math.round(amountRs * 100);
-
-    const effectiveTaskUpi = freshUser.upiId || taskUpi;
-    if (!effectiveTaskUpi.trim()) {
-      toast.error("Enter your UPI ID");
-      return;
-    }
-    if (!amountRs || amountRs < 10) {
-      toast.error("Minimum withdrawal is ₹10");
-      return;
-    }
-    if (amountRs > 250) {
-      toast.error("Maximum withdrawal per request is ₹250");
-      return;
-    }
-    if (user.coinBalance < coins) {
-      toast.error("Insufficient balance");
-      return;
-    }
-
-    const today = todayStr();
-    // Count actual task withdrawals today from storage (not stale state)
-    const allWdrToday = getWithdrawals().filter(
-      (w) =>
-        w.userId === user.id &&
-        w.type === "task" &&
-        w.createdAt.startsWith(today),
-    ).length;
-    if (allWdrToday >= 5) {
-      toast.error("DAILY LIMIT REACHED — ONLY 5 WITHDRAWALS ALLOWED PER DAY");
-      return;
-    }
-    const withdrawsToday = allWdrToday;
-
-    const req = {
-      id: generateId(),
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
-      userUpiId: effectiveTaskUpi.trim(),
-      coins,
-      amountRs,
-      type: "task" as const,
-      status: "pending" as const,
-      createdAt: new Date().toISOString(),
-    };
-    saveWithdrawals([...getWithdrawals(), req]);
-    const updated = {
-      ...user,
-      coinBalance: user.coinBalance - coins,
-      taskWithdrawalsToday: withdrawsToday + 1,
-      lastWithdrawalDate: today,
-    };
-    updateUser(updated);
-    onUserUpdate(updated);
-    setTaskAmountRs("");
-    toast.success(`Withdrawal request of ₹${amountRs.toFixed(2)} submitted!`);
-  };
-
-  const handleRefWithdraw = () => {
-    const amountRs = Number(refAmountRs);
-    const coins = Math.round(amountRs * 100);
-
-    const effectiveRefUpi = freshUser.upiId || refUpi;
-    if (!effectiveRefUpi.trim()) {
-      toast.error("Enter your UPI ID");
-      return;
-    }
-    if (!amountRs || amountRs < 10) {
-      toast.error("Minimum withdrawal is ₹10");
-      return;
-    }
-    if (amountRs > 250) {
-      toast.error("Maximum withdrawal per request is ₹250");
-      return;
-    }
-    const currentUser = getUserById(user.id);
-    if (!currentUser || currentUser.referralCoinBalance < coins) {
-      toast.error("Insufficient referral balance");
-      return;
-    }
-
-    const req = {
-      id: generateId(),
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
-      userUpiId: effectiveRefUpi.trim(),
-      coins,
-      amountRs,
-      type: "referral" as const,
-      status: "pending" as const,
-      createdAt: new Date().toISOString(),
-    };
-    saveWithdrawals([...getWithdrawals(), req]);
-    const updated = {
-      ...currentUser,
-      referralCoinBalance: currentUser.referralCoinBalance - coins,
-    };
-    updateUser(updated);
-    onUserUpdate(updated);
-    setRefAmountRs("");
-    toast.success(`Referral withdrawal of ₹${amountRs.toFixed(2)} submitted!`);
-  };
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional on mount only
-  useEffect(() => {
-    const u = getUserById(user.id);
-    if (u) onUserUpdate(u);
-  }, [user.id]); // eslint-disable-line
-
-  const freshUser = getUserById(user.id) || user;
 
   return (
-    <div className="space-y-5 pb-4">
-      {/* Balance Cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="bg-gradient-to-br from-primary to-emerald-600 border-0 text-white">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs opacity-80">Task Balance</p>
-            <p className="text-2xl font-bold">
-              ₹{(freshUser.coinBalance / 100).toFixed(2)}
-            </p>
-            <p className="text-xs opacity-70">
-              🪙 {freshUser.coinBalance} coins
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-amber-500 to-orange-500 border-0 text-white">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs opacity-80">Referral Balance</p>
-            <p className="text-2xl font-bold">
-              ₹{(freshUser.referralCoinBalance / 100).toFixed(2)}
-            </p>
-            <p className="text-xs opacity-70">
-              🪙 {freshUser.referralCoinBalance} coins
-            </p>
-          </CardContent>
-        </Card>
+    <div className="p-4 space-y-4" data-ocid="refer.section">
+      {/* Earnings highlight */}
+      <div
+        className="rounded-xl p-4 text-white text-center shadow-xl"
+        style={{ background: "linear-gradient(135deg, #f7c948, #ff6b35)" }}
+      >
+        <p className="text-2xl font-black">🔥 EARN ₹7500 PER DAY! HURRY! 🔥</p>
+        <p className="text-sm mt-1 opacity-90">
+          REFER FRIENDS & EARN 500 COINS PER TASK COMPLETED
+        </p>
       </div>
 
-      {/* UPI ID */}
-      <Card>
-        <CardContent className="pt-4 pb-4 space-y-2">
-          <Label className="font-semibold">Your UPI ID</Label>
-          {freshUser.upiId ? (
-            <div
-              data-ocid="user.wallet.upi.locked"
-              className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2"
+      {/* Referral Code */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <p className="text-xs font-bold text-gray-500 tracking-widest mb-2">
+          YOUR REFERRAL CODE
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex-1 bg-orange-50 border-2 border-orange-200 rounded-xl p-3 text-center">
+            <p className="text-2xl font-black text-orange-600 tracking-[0.3em]">
+              {user.referralCode}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-ocid="refer.copy.button"
+            onClick={copyLink}
+            className="p-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600"
+          >
+            <Copy size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Share Link */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <p className="text-xs font-bold text-gray-500 tracking-widest mb-3">
+          SHARE YOUR REFERRAL LINK
+        </p>
+        <div className="grid grid-cols-5 gap-2">
+          {SOCIAL.map((s) => (
+            <a
+              key={s.name}
+              href={s.getUrl(referralLink)}
+              target="_blank"
+              rel="noreferrer"
+              data-ocid={`refer.${s.name.toLowerCase()}.button`}
+              className="flex flex-col items-center gap-1"
             >
-              <span className="text-lg">🔒</span>
-              <div className="flex-1">
-                <p className="text-sm font-bold text-amber-800 font-mono">
-                  {freshUser.upiId}
-                </p>
-                <p className="text-xs text-amber-600 font-semibold">
-                  UPI ID LOCKED - CANNOT BE CHANGED
-                </p>
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black text-lg shadow-md"
+                style={{ background: s.bg }}
+              >
+                {s.icon}
               </div>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <Input
-                data-ocid="user.wallet.upi.input"
-                value={upiSave}
-                onChange={(e) => setUpiSave(e.target.value)}
-                placeholder="yourname@upi"
-                className="flex-1"
-              />
-              <Button
-                onClick={saveUpi}
-                className="bg-primary text-primary-foreground"
-              >
-                Save
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              <span className="text-[9px] font-bold text-gray-600">
+                {s.name}
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
 
-      {/* Task Withdrawal */}
-      <Card className="border-primary/30">
-        <CardContent className="pt-4 pb-4 space-y-3">
-          <p className="font-semibold text-sm">💰 Task Withdrawal</p>
-          {(() => {
-            const today = todayStr();
-            const usedToday = getWithdrawals().filter(
-              (w) =>
-                w.userId === user.id &&
-                w.type === "task" &&
-                w.createdAt.startsWith(today),
-            ).length;
-            const remaining = 5 - usedToday;
-            return (
-              <p
-                className={`text-xs font-semibold ${remaining === 0 ? "text-red-500" : "text-muted-foreground"}`}
-              >
-                MIN ₹10 • MAX ₹250 • {remaining}/5 WITHDRAWALS REMAINING TODAY
-              </p>
-            );
-          })()}
-          <div>
-            <Label className="text-xs">UPI ID</Label>
-            {freshUser.upiId ? (
-              <Input
-                data-ocid="user.wallet.withdraw.upi.input"
-                value={freshUser.upiId}
-                disabled
-                className="mt-1 bg-amber-50 text-amber-800 font-mono"
-              />
-            ) : (
-              <Input
-                data-ocid="user.wallet.withdraw.upi.input"
-                value={taskUpi}
-                onChange={(e) => setTaskUpi(e.target.value)}
-                placeholder="Enter UPI ID For Payment"
-                className="mt-1"
-              />
-            )}
+      {/* Referral History */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <h3 className="font-black text-xs tracking-widest mb-3">
+          YOUR REFERRAL LIST ({referredUsers.length})
+        </h3>
+        {referredUsers.length === 0 ? (
+          <div data-ocid="refer.empty_state" className="text-center py-4">
+            <p className="text-gray-400 text-sm">NO REFERRALS YET</p>
+            <p className="text-xs text-gray-400 mt-1">
+              SHARE YOUR CODE TO START EARNING!
+            </p>
           </div>
-          <div>
-            <Label className="text-xs">Amount (₹)</Label>
-            <Input
-              data-ocid="user.wallet.withdraw.coins.input"
-              type="number"
-              value={taskAmountRs}
-              onChange={(e) => setTaskAmountRs(e.target.value)}
-              placeholder="Enter amount in ₹ (10–250)"
-              className="mt-1"
-            />
-            {taskAmountRs && Number(taskAmountRs) >= 10 && (
-              <p className="text-xs text-primary mt-1">
-                = 🪙 {Math.round(Number(taskAmountRs) * 100)} coins
-              </p>
-            )}
-          </div>
-          <Button
-            data-ocid="user.wallet.withdraw.submit_button"
-            className="w-full bg-primary text-primary-foreground"
-            onClick={handleTaskWithdraw}
-          >
-            Request Withdrawal
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Referral Withdrawal */}
-      <Card className="border-amber-300">
-        <CardContent className="pt-4 pb-4 space-y-3">
-          <p className="font-semibold text-sm">🎁 Referral Withdrawal</p>
-          <p className="text-xs text-muted-foreground">
-            Min ₹10 • Max ₹250 • 1000 Coins = ₹10
-          </p>
-          <div>
-            <Label className="text-xs">UPI ID</Label>
-            {freshUser.upiId ? (
-              <Input
-                data-ocid="user.wallet.referral_withdraw.upi.input"
-                value={freshUser.upiId}
-                disabled
-                className="mt-1 bg-amber-50 text-amber-800 font-mono"
-              />
-            ) : (
-              <Input
-                data-ocid="user.wallet.referral_withdraw.upi.input"
-                value={refUpi}
-                onChange={(e) => setRefUpi(e.target.value)}
-                placeholder="Enter UPI ID For Payment"
-                className="mt-1"
-              />
-            )}
-          </div>
-          <div>
-            <Label className="text-xs">Amount (₹)</Label>
-            <Input
-              type="number"
-              value={refAmountRs}
-              onChange={(e) => setRefAmountRs(e.target.value)}
-              placeholder="Enter amount in ₹ (10–250)"
-              className="mt-1"
-            />
-            {refAmountRs && Number(refAmountRs) >= 10 && (
-              <p className="text-xs text-amber-600 mt-1">
-                = 🪙 {Math.round(Number(refAmountRs) * 100)} coins
-              </p>
-            )}
-          </div>
-          <Button
-            data-ocid="user.wallet.referral_withdraw.submit_button"
-            className="w-full bg-amber-500 text-white hover:bg-amber-600"
-            onClick={handleRefWithdraw}
-          >
-            Request Referral Withdrawal
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Withdrawal History */}
-      <Card>
-        <CardContent className="pt-4 pb-4">
-          <p className="font-semibold text-sm mb-3">Withdrawal History</p>
+        ) : (
           <div className="space-y-2">
-            {getWithdrawals()
-              .filter((w) => w.userId === user.id)
-              .slice()
-              .reverse()
-              .map((w) => (
+            {referredUsers.map((ru, i) => {
+              const status = ru.hasCompletedFirstTask
+                ? "BONUS EARNED"
+                : "JOINED";
+              return (
                 <div
-                  key={w.id}
-                  className="flex items-center justify-between text-xs py-2 border-b border-border last:border-0"
+                  key={ru.id}
+                  data-ocid={`refer.item.${i + 1}`}
+                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
                 >
                   <div>
-                    <span className="font-medium">
-                      {w.type === "task" ? "Task" : "Referral"}
-                    </span>
-                    <p className="text-muted-foreground">
-                      {new Date(w.createdAt).toLocaleDateString()}
-                    </p>
-                    <p className="text-muted-foreground font-mono">
-                      {w.userUpiId}
-                    </p>
+                    <p className="text-xs font-bold">{ru.name.toUpperCase()}</p>
+                    <p className="text-[10px] text-gray-500">{ru.userId}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold">₹{w.amountRs.toFixed(2)}</p>
                     <Badge
-                      className={`text-xs ${
-                        w.status === "approved"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : w.status === "rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-amber-100 text-amber-700"
-                      } border-0`}
+                      variant={
+                        ru.hasCompletedFirstTask ? "default" : "secondary"
+                      }
+                      className="text-[10px]"
                     >
-                      {w.status}
+                      {status}
                     </Badge>
-                    {w.status === "approved" && (
-                      <p className="text-xs text-emerald-600 font-semibold mt-0.5">
-                        ✅ PAID VIA UPI
-                      </p>
-                    )}
-                    {w.status === "approved" && w.processedAt && (
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(w.processedAt).toLocaleDateString()}
+                    {ru.hasCompletedFirstTask && (
+                      <p className="text-[10px] text-green-600 font-bold mt-1">
+                        +₹5 EARNED
                       </p>
                     )}
                   </div>
                 </div>
-              ))}
-            {getWithdrawals().filter((w) => w.userId === user.id).length ===
-              0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No Withdrawal Requests Yet
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ─── Referral Tab ──────────────────────────────────────────────────────────────
-function ReferralTab({ user }: { user: User }) {
-  const allCompletions = getCompletions();
-  const referrals = getUsers()
-    .filter((u) => u.referredBy === user.referralCode)
-    .map((u) => {
-      const hasCompletedTask = allCompletions.some((c) => c.userId === u.id);
-      const bonusEarned = u.hasCompletedFirstTask === true;
-      return { ...u, hasCompletedTask, bonusEarned };
-    });
-  const totalBonusEarned = referrals.filter((r) => r.bonusEarned).length * 5000;
-
-  const copyCode = () => {
-    navigator.clipboard.writeText(user.referralCode).then(() => {
-      toast.success("Referral code copied!");
-    });
-  };
-
-  const referralLink = `${window.location.origin}?ref=${user.referralCode}`;
-  const shareText = `JOIN RMONEY AND EARN REAL MONEY! USE MY REFERRAL CODE: ${user.referralCode}\nDOWNLOAD NOW: ${referralLink}`;
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(referralLink).then(() => {
-      toast.success("Referral link copied!");
-    });
-  };
-
-  const shareOnWhatsApp = () => {
-    window.open(
-      `https://wa.me/?text=${encodeURIComponent(shareText)}`,
-      "_blank",
-    );
-  };
-
-  const shareOnTelegram = () => {
-    window.open(
-      `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(`JOIN RMONEY AND EARN REAL MONEY! USE MY REFERRAL CODE: ${user.referralCode}`)}`,
-      "_blank",
-    );
-  };
-
-  const shareOnFacebook = () => {
-    window.open(
-      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(referralLink)}`,
-      "_blank",
-    );
-  };
-
-  const shareOnInstagram = () => {
-    navigator.clipboard.writeText(shareText).then(() => {
-      toast.success(
-        "Text copied! Open Instagram and paste in your story or bio.",
-      );
-    });
-  };
-
-  const shareOnGmail = () => {
-    window.open(
-      `mailto:?subject=${encodeURIComponent("JOIN RMONEY - EARN REAL MONEY!")}&body=${encodeURIComponent(shareText)}`,
-      "_blank",
-    );
-  };
-
-  return (
-    <div className="space-y-5 pb-4">
-      {/* Referral Code Card */}
-      <Card className="bg-gradient-to-br from-primary to-emerald-700 border-0 text-white">
-        <CardContent className="pt-5 pb-5 text-center">
-          <p className="text-sm opacity-80 mb-2 uppercase">
-            YOUR REFERRAL CODE
-          </p>
-          <p className="text-3xl font-bold font-mono tracking-widest mb-3">
-            {user.referralCode}
-          </p>
-          <div className="flex gap-2 justify-center mb-4">
-            <Button
-              data-ocid="user.referral.copy_button"
-              variant="secondary"
-              size="sm"
-              onClick={copyCode}
-              className="bg-white/20 text-white border-white/30 hover:bg-white/30"
-            >
-              📋 COPY CODE
-            </Button>
-            <Button
-              data-ocid="user.referral.copy_link_button"
-              variant="secondary"
-              size="sm"
-              onClick={copyLink}
-              className="bg-white/20 text-white border-white/30 hover:bg-white/30"
-            >
-              🔗 COPY LINK
-            </Button>
-          </div>
-          {/* Referral Link Display */}
-          <div className="bg-white/10 rounded-lg px-3 py-2 mb-4 text-xs font-mono break-all text-white/90">
-            {referralLink}
-          </div>
-          {/* Social Share Buttons */}
-          <p className="text-xs opacity-70 uppercase mb-2">SHARE VIA</p>
-          <div className="grid grid-cols-5 gap-2">
-            <button
-              type="button"
-              data-ocid="user.referral.whatsapp_button"
-              onClick={shareOnWhatsApp}
-              className="flex flex-col items-center gap-1 bg-[#25D366]/80 hover:bg-[#25D366] rounded-xl py-2 px-1 transition-all"
-            >
-              <span className="text-xl">💬</span>
-              <span className="text-[9px] font-bold text-white">WHATSAPP</span>
-            </button>
-            <button
-              type="button"
-              data-ocid="user.referral.telegram_button"
-              onClick={shareOnTelegram}
-              className="flex flex-col items-center gap-1 bg-[#2AABEE]/80 hover:bg-[#2AABEE] rounded-xl py-2 px-1 transition-all"
-            >
-              <span className="text-xl">✈️</span>
-              <span className="text-[9px] font-bold text-white">TELEGRAM</span>
-            </button>
-            <button
-              type="button"
-              data-ocid="user.referral.facebook_button"
-              onClick={shareOnFacebook}
-              className="flex flex-col items-center gap-1 bg-[#1877F2]/80 hover:bg-[#1877F2] rounded-xl py-2 px-1 transition-all"
-            >
-              <span className="text-xl">📘</span>
-              <span className="text-[9px] font-bold text-white">FACEBOOK</span>
-            </button>
-            <button
-              type="button"
-              data-ocid="user.referral.instagram_button"
-              onClick={shareOnInstagram}
-              className="flex flex-col items-center gap-1 bg-gradient-to-br from-[#f09433] via-[#e6683c] to-[#dc2743]/80 hover:opacity-90 rounded-xl py-2 px-1 transition-all"
-            >
-              <span className="text-xl">📸</span>
-              <span className="text-[9px] font-bold text-white">INSTAGRAM</span>
-            </button>
-            <button
-              type="button"
-              data-ocid="user.referral.gmail_button"
-              onClick={shareOnGmail}
-              className="flex flex-col items-center gap-1 bg-[#EA4335]/80 hover:bg-[#EA4335] rounded-xl py-2 px-1 transition-all"
-            >
-              <span className="text-xl">📧</span>
-              <span className="text-[9px] font-bold text-white">GMAIL</span>
-            </button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Earnings Info */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="text-center">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-2xl font-bold text-primary">
-              {referrals.length}
-            </p>
-            <p className="text-xs text-muted-foreground">Friends Referred</p>
-          </CardContent>
-        </Card>
-        <Card className="text-center">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-2xl font-bold text-amber-500">
-              ₹{(user.referralCoinBalance / 100).toFixed(2)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              🪙 {user.referralCoinBalance} coins
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* How it works */}
-      <Card className="bg-emerald-50 border-emerald-200">
-        <CardContent className="pt-4 pb-4">
-          <p className="text-sm font-semibold text-emerald-800 mb-2">
-            🎁 REFERRAL REWARDS
-          </p>
-          <ul className="text-xs text-emerald-700 space-y-1">
-            <li>• SHARE YOUR UNIQUE REFERRAL CODE</li>
-            <li>
-              • WHEN FRIEND COMPLETES FIRST TASK → YOU GET ₹50, FRIEND GETS ₹20
-            </li>
-            <li>• WITHDRAW VIA UPI IN WALLET TAB (MIN ₹10, MAX ₹250)</li>
-          </ul>
-        </CardContent>
-      </Card>
-
-      {/* Referral History */}
-      <div>
-        <p className="text-sm font-bold uppercase mb-2">
-          MY REFER LIST ({referrals.length})
-        </p>
-        {referrals.length === 0 ? (
-          <Card data-ocid="user.referral.empty_state">
-            <CardContent className="py-8 text-center text-muted-foreground text-sm">
-              NO FRIENDS REFERRED YET. SHARE YOUR CODE!
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {referrals.map((ref, idx) => (
-              <Card
-                key={ref.id}
-                data-ocid={`user.referral.item.${idx + 1}`}
-                className="border border-border"
-              >
-                <CardContent className="py-3 px-4 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-sm font-bold text-primary uppercase">
-                    {ref.name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold uppercase truncate">
-                      {ref.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      JOINED{" "}
-                      {new Date(ref.createdAt).toLocaleDateString("en-IN")}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    {ref.bonusEarned ? (
-                      <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300 border">
-                        ✅ BONUS EARNED
-                      </Badge>
-                    ) : ref.hasCompletedTask ? (
-                      <Badge className="text-[10px] bg-yellow-100 text-yellow-700 border-yellow-300 border">
-                        ⏳ TASK DONE
-                      </Badge>
-                    ) : (
-                      <Badge className="text-[10px] bg-gray-100 text-gray-500 border-gray-300 border">
-                        🔗 JOINED
-                      </Badge>
-                    )}
-                    {ref.bonusEarned && (
-                      <span className="text-[10px] font-bold text-emerald-600">
-                        +₹50
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-        {totalBonusEarned > 0 && (
-          <div className="mt-3 text-center text-xs font-bold text-emerald-700 bg-emerald-50 rounded-lg py-2">
-            TOTAL REFERRAL BONUS EARNED: ₹{(totalBonusEarned / 100).toFixed(2)}
+              );
+            })}
           </div>
         )}
       </div>
@@ -1382,264 +1316,177 @@ function ReferralTab({ user }: { user: User }) {
   );
 }
 
-// ─── Profile Tab ───────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// PROFILE TAB
+// ──────────────────────────────────────────────────────────────
 function ProfileTab({
   user,
-  onUserUpdate,
-  onLogout,
-}: { user: User; onUserUpdate: (u: User) => void; onLogout: () => void }) {
+  actor,
+  actorRef,
+  onRefresh,
+}: {
+  user: RMUser;
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+}) {
   const [name, setName] = useState(user.name);
-  const [upiId, setUpiId] = useState(user.upiId ?? "");
-  const [photo, setPhoto] = useState(user.profilePhoto ?? "");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [upiId, setUpiId] = useState(user.upiId);
+  const [busy, setBusy] = useState(false);
+  const { upload, uploading } = useUpload();
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setPhoto(base64);
-      const updated = { ...user, profilePhoto: base64 };
-      updateUser(updated);
-      onUserUpdate(updated);
-      toast.success("Profile photo updated! 📸");
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      toast.error("Name cannot be empty");
+  const handleSave = async () => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    if (!isValidUpi(upiId) && upiId.trim() !== "") {
+      toast.error("INVALID UPI ID FORMAT (e.g. 9876543210@paytm)");
       return;
     }
-    const updated = {
-      ...user,
-      name: name.trim(),
-      upiId: upiId.trim() || undefined,
-      profilePhoto: photo || undefined,
-    };
-    updateUser(updated);
-    onUserUpdate(updated);
-    toast.success("Profile updated!");
+    if (user.upiLocked && upiId !== user.upiId) {
+      toast.error("UPI ID CANNOT BE CHANGED ONCE SET");
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated: RMUser = {
+        ...user,
+        name: name.trim() || user.name,
+        upiId: upiId.trim(),
+        upiLocked: upiId.trim() !== "" ? true : user.upiLocked,
+      };
+      await a.updateUser(updated);
+      toast.success("PROFILE UPDATED!");
+      onRefresh();
+    } catch {
+      toast.error("UPDATE FAILED. TRY AGAIN.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const a = actorRef.current || actor;
+    if (!a || !e.target.files?.[0]) return;
+    try {
+      const url = await upload(e.target.files[0]);
+      await a.updateUser({ ...user, profilePhotoUrl: url });
+      toast.success("PHOTO UPDATED!");
+      onRefresh();
+    } catch {
+      toast.error("PHOTO UPLOAD FAILED");
+    }
   };
 
   return (
-    <div className="space-y-5 pb-4">
-      {/* Avatar */}
-      <div className="flex flex-col items-center gap-3 py-4">
+    <div className="p-4 space-y-4" data-ocid="profile.section">
+      {/* Photo */}
+      <div className="bg-white rounded-xl p-4 shadow-sm flex flex-col items-center gap-3">
         <div className="relative">
-          <Avatar className="w-24 h-24 border-4 border-primary/30 shadow-lg">
-            <AvatarImage src={photo} alt={user.name} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
+          <Avatar className="w-24 h-24 border-4 border-orange-300">
+            <AvatarImage src={user.profilePhotoUrl} />
+            <AvatarFallback className="bg-orange-100 text-orange-600 font-black text-2xl">
               {user.name.charAt(0).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <button
-            type="button"
-            className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg text-sm"
-            onClick={() => fileInputRef.current?.click()}
-            title="Update photo"
+          <label
+            htmlFor="profile-photo-input"
+            className="absolute bottom-0 right-0 bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center cursor-pointer hover:bg-orange-600"
           >
-            📷
-          </button>
+            {uploading ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Camera size={14} />
+            )}
+            <input
+              data-ocid="profile.upload_button"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoUpload}
+              disabled={uploading}
+            />
+          </label>
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handlePhotoChange}
-        />
-        <Button
-          data-ocid="user.profile.photo.upload_button"
-          variant="outline"
-          size="sm"
-          onClick={() => fileInputRef.current?.click()}
-          className="text-xs"
-        >
-          📷 Update Photo
-        </Button>
         <div className="text-center">
-          <p className="font-semibold">{user.name}</p>
-          <p className="text-xs text-muted-foreground font-mono">{user.id}</p>
+          <p className="font-black text-sm tracking-wider">
+            {user.name.toUpperCase()}
+          </p>
+          <p className="text-xs text-gray-500">{user.userId}</p>
         </div>
       </div>
 
-      {/* Form */}
-      <Card>
-        <CardContent className="pt-4 pb-4 space-y-4">
-          <div>
-            <Label>Full Name</Label>
-            <Input
-              data-ocid="user.profile.name.input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <div>
-            <Label>User ID</Label>
-            <Input
-              value={user.id}
-              disabled
-              className="mt-1 font-mono text-xs bg-muted"
-            />
-          </div>
-          <div>
-            <Label>Phone Number</Label>
-            <Input value={user.phone} disabled className="mt-1 bg-muted" />
-          </div>
-          <div>
-            <Label>UPI ID</Label>
-            <Input
-              data-ocid="user.profile.upi.input"
-              value={upiId}
-              onChange={(e) => setUpiId(e.target.value)}
-              placeholder="yourname@upi"
-              className="mt-1"
-            />
-          </div>
-          <Button
-            data-ocid="user.profile.save_button"
-            className="w-full bg-primary text-primary-foreground"
-            onClick={handleSave}
-          >
-            Save Profile
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Logout */}
-      <Button
-        variant="outline"
-        className="w-full border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-        onClick={() => {
-          setUserSession(null);
-          onLogout();
-        }}
-      >
-        Logout
-      </Button>
-
-      {/* Footer */}
-      <p className="text-center text-xs text-muted-foreground pb-2">
-        © {new Date().getFullYear()}.{" "}
-        <a
-          href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:underline"
+      {/* Edit Form */}
+      <div className="bg-white rounded-xl p-4 shadow-sm space-y-3">
+        <h3 className="font-black text-xs tracking-widest">EDIT PROFILE</h3>
+        <div>
+          <p className="text-[10px] font-bold text-gray-500 tracking-widest">
+            FULL NAME
+          </p>
+          <Input
+            data-ocid="profile.name.input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="mt-1 uppercase"
+            placeholder="YOUR NAME"
+          />
+        </div>
+        <div>
+          <p className="text-[10px] font-bold text-gray-500 tracking-widest">
+            UPI ID{" "}
+            {user.upiLocked && (
+              <span className="text-red-500">(PERMANENT - CANNOT CHANGE)</span>
+            )}
+          </p>
+          <Input
+            data-ocid="profile.upi.input"
+            value={upiId}
+            onChange={(e) => setUpiId(e.target.value)}
+            placeholder="9876543210@paytm"
+            disabled={user.upiLocked}
+            className="mt-1"
+          />
+          {!user.upiLocked && (
+            <p className="text-[10px] text-orange-500 mt-1 font-semibold">
+              ⚠️ ONCE SET, UPI ID CANNOT BE CHANGED
+            </p>
+          )}
+        </div>
+        <Button
+          data-ocid="profile.save_button"
+          onClick={handleSave}
+          disabled={busy}
+          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold tracking-widest"
         >
-          Built with ❤️ using caffeine.ai
-        </a>
-      </p>
-    </div>
-  );
-}
+          {busy ? (
+            <Loader2 className="animate-spin" size={16} />
+          ) : (
+            "SAVE CHANGES"
+          )}
+        </Button>
+      </div>
 
-// ─── User App (after login) ────────────────────────────────────────────────────
-type UserTab = "home" | "tasks" | "wallet" | "referral" | "profile";
-
-function UserApp({ userId }: { userId: string }) {
-  const [tab, setTab] = useState<UserTab>("home");
-  const [user, setUser] = useState<User | null>(
-    () => getUserById(userId) ?? null,
-  );
-
-  if (!user) return null;
-
-  const updateAndRefresh = (u: User) => setUser(u);
-
-  const navItems: { id: UserTab; icon: string; label: string }[] = [
-    { id: "home", icon: "🏠", label: "Home" },
-    { id: "tasks", icon: "✅", label: "Tasks" },
-    { id: "wallet", icon: "💰", label: "Wallet" },
-    { id: "referral", icon: "🎁", label: "Refer" },
-    { id: "profile", icon: "👤", label: "Profile" },
-  ];
-
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center">
-      <div className="w-full max-w-[430px] min-h-screen flex flex-col relative">
-        {/* Header */}
-        <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-border px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0">
-              <img
-                src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1.jpeg"
-                alt="RMoney"
-                className="w-full h-full object-cover object-center scale-150"
-              />
-            </div>
-            <span className="font-display font-bold text-primary">RMoney</span>
+      {/* Account Info */}
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <h3 className="font-black text-xs tracking-widest mb-3">
+          ACCOUNT INFO
+        </h3>
+        <div className="space-y-2 text-xs">
+          <div className="flex justify-between">
+            <span className="text-gray-500">USER ID</span>
+            <span className="font-bold">{user.userId}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono text-muted-foreground">
-              {user.id}
+          <div className="flex justify-between">
+            <span className="text-gray-500">PHONE</span>
+            <span className="font-bold">{user.phone}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">REFERRAL CODE</span>
+            <span className="font-bold text-orange-500">
+              {user.referralCode}
             </span>
-            <Avatar className="w-7 h-7">
-              <AvatarImage src={user.profilePhoto} />
-              <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                {user.name.charAt(0)}
-              </AvatarFallback>
-            </Avatar>
           </div>
-        </header>
-
-        {/* Content */}
-        <main className="flex-1 overflow-y-auto px-4 pt-4">
-          {tab === "home" && <HomeTab user={user} />}
-          {tab === "tasks" && (
-            <TasksTab user={user} onUserUpdate={updateAndRefresh} />
-          )}
-          {tab === "wallet" && (
-            <WalletTab user={user} onUserUpdate={updateAndRefresh} />
-          )}
-          {tab === "referral" && <ReferralTab user={user} />}
-          {tab === "profile" && (
-            <ProfileTab
-              user={user}
-              onUserUpdate={updateAndRefresh}
-              onLogout={() => window.location.reload()}
-            />
-          )}
-        </main>
-
-        {/* Bottom Nav */}
-        <nav className="sticky bottom-0 z-10 bg-white/95 backdrop-blur border-t border-border flex">
-          {navItems.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              data-ocid={`user.${item.id}.tab`}
-              className={`flex-1 flex flex-col items-center py-2 transition-colors ${
-                tab === item.id ? "text-primary" : "text-muted-foreground"
-              }`}
-              onClick={() => setTab(item.id)}
-            >
-              <span className="text-lg">{item.icon}</span>
-              <span className="text-[10px] font-medium mt-0.5">
-                {item.label}
-              </span>
-              {tab === item.id && (
-                <span className="w-1 h-1 rounded-full bg-primary mt-0.5" />
-              )}
-            </button>
-          ))}
-        </nav>
+        </div>
       </div>
     </div>
   );
-}
-
-// ─── User Portal Root ──────────────────────────────────────────────────────────
-export default function UserPortal() {
-  const [userId, setUserId] = useState<string | null>(getUserSession);
-
-  if (userId && getUserById(userId)) {
-    return <UserApp userId={userId} />;
-  }
-
-  return <AuthScreen onLogin={(id) => setUserId(id)} />;
 }

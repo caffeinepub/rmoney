@@ -1,1461 +1,1306 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import type { Task, TaskCompletion, WithdrawalRequest } from "../types";
 import {
-  generateId,
-  generateOTP,
-  getAdminSession,
-  getAdminWallet,
-  getCompletions,
-  getOTPStore,
-  getTasks,
-  getUsers,
-  getWithdrawals,
-  saveAdminWallet,
-  saveCompletions,
-  saveOTPStore,
-  saveTasks,
-  saveUsers,
-  saveWithdrawals,
-  setAdminSession,
-} from "../utils/storage";
+  CheckCircle,
+  Clock,
+  CreditCard,
+  Edit,
+  Image,
+  LayoutDashboard,
+  ListTodo,
+  Loader2,
+  LogOut,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Users,
+  Wallet,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import type {
+  RMAdminWallet,
+  RMTask,
+  RMTaskCompletion,
+  RMUser,
+  RMWithdrawalRequest,
+} from "../backend.d";
+import { useUpload } from "../blob-storage/hooks";
+import { useActor } from "../hooks/useActor";
+import { generateId, getAdminSession, setAdminSession } from "../utils/storage";
 
-// ─── Admin Login ───────────────────────────────────────────────────────────────
+const ADMIN_PHONE = "9053405019";
+const ADMIN_PASS = "Rakhi5050";
+
+type AdminTab = "dashboard" | "tasks" | "users" | "withdrawals" | "wallet";
+
+export default function AdminPortal() {
+  const [logged, setLogged] = useState(getAdminSession);
+  if (!logged)
+    return (
+      <AdminLogin
+        onLogin={() => {
+          setAdminSession(true);
+          setLogged(true);
+        }}
+      />
+    );
+  return (
+    <AdminApp
+      onLogout={() => {
+        setAdminSession(false);
+        setLogged(false);
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// LOGIN
+// ──────────────────────────────────────────────────────────────
 function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [forgotMode, setForgotMode] = useState(false);
-  const [forgotPhone, setForgotPhone] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [enteredOtp, setEnteredOtp] = useState("");
-  const [displayOtp, setDisplayOtp] = useState("");
+  const [pass, setPass] = useState("");
+  const [err, setErr] = useState("");
 
   const handleLogin = () => {
-    if (phone === "9053405019" && password === "Rakhi5050") {
-      setAdminSession(true);
+    if (phone === ADMIN_PHONE && pass === ADMIN_PASS) {
       onLogin();
-      toast.success("Welcome back, Admin!");
     } else {
-      toast.error("Invalid credentials. Try 9053405019 / Rakhi5050");
-    }
-  };
-
-  const handleSendOtp = () => {
-    if (forgotPhone !== "9053405019") {
-      toast.error("Phone number not found");
-      return;
-    }
-    const otp = generateOTP();
-    saveOTPStore({
-      phone: forgotPhone,
-      otp,
-      expiry: Date.now() + 5 * 60 * 1000,
-    });
-    toast.info(`OTP for demo: ${otp}`, { duration: 30000 });
-    setDisplayOtp(otp);
-    setOtpSent(true);
-  };
-
-  const handleVerifyOtp = () => {
-    const store = getOTPStore();
-    if (store && store.otp === enteredOtp && store.expiry > Date.now()) {
-      saveOTPStore(null);
-      setForgotMode(false);
-      setOtpSent(false);
-      toast.success("OTP verified! Your password is: Rakhi5050");
-    } else {
-      toast.error("Invalid or expired OTP");
+      setErr("INVALID CREDENTIALS");
     }
   };
 
   return (
-    <div className="dark min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
-          <div className="w-24 h-24 mx-auto mb-4 rounded-2xl overflow-hidden">
+          <div className="w-20 h-20 rounded-full overflow-hidden mx-auto mb-3 border-4 border-orange-300">
             <img
-              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1.jpeg"
-              alt="RMoney"
-              className="w-full h-full object-cover object-center scale-150"
+              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1-1.jpeg"
+              alt="RM"
+              className="w-full h-full object-cover scale-[2.2]"
             />
           </div>
-          <h1 className="text-3xl font-display font-bold text-foreground">
-            RMoney Admin
-          </h1>
-          <p className="text-muted-foreground mt-1">Management Portal</p>
+          <h1 className="text-2xl font-black tracking-widest">RMMONEY ₹</h1>
+          <p className="text-sm text-gray-500 mt-1">ADMIN PORTAL</p>
         </div>
-
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-foreground">
-              {forgotMode ? "Reset Password" : "Admin Login"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!forgotMode ? (
-              <>
-                <div>
-                  <Label className="text-foreground">Mobile Number</Label>
-                  <Input
-                    data-ocid="admin.login.input"
-                    className="mt-1"
-                    placeholder="Enter Mobile Number"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    type="tel"
-                  />
-                </div>
-                <div>
-                  <Label className="text-foreground">Password</Label>
-                  <Input
-                    className="mt-1"
-                    placeholder="Enter Password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  />
-                </div>
-                <Button
-                  data-ocid="admin.login.submit_button"
-                  className="w-full bg-primary text-primary-foreground hover:opacity-90"
-                  onClick={handleLogin}
-                >
-                  Login
-                </Button>
-                <button
-                  type="button"
-                  className="text-sm text-primary hover:underline w-full text-center"
-                  onClick={() => setForgotMode(true)}
-                >
-                  Forgot Password?
-                </button>
-              </>
-            ) : (
-              <>
-                <div>
-                  <Label className="text-foreground">Mobile Number</Label>
-                  <Input
-                    className="mt-1"
-                    placeholder="9053405019"
-                    value={forgotPhone}
-                    onChange={(e) => setForgotPhone(e.target.value)}
-                    type="tel"
-                  />
-                </div>
-                {!otpSent ? (
-                  <Button className="w-full" onClick={handleSendOtp}>
-                    Send OTP
-                  </Button>
-                ) : (
-                  <>
-                    {displayOtp && (
-                      <div className="bg-emerald-900/30 border-2 border-emerald-500 rounded-xl p-3 text-center">
-                        <p className="text-xs text-emerald-400 font-medium mb-1">
-                          YOUR OTP CODE
-                        </p>
-                        <p className="text-3xl font-bold font-mono tracking-widest text-emerald-300">
-                          {displayOtp}
-                        </p>
-                        <p className="text-xs text-emerald-400 mt-1">
-                          Enter this code below to verify
-                        </p>
-                      </div>
-                    )}
-                    <div>
-                      <Label className="text-foreground">Enter OTP</Label>
-                      <Input
-                        className="mt-1"
-                        placeholder="6-Digit OTP"
-                        value={enteredOtp}
-                        onChange={(e) => setEnteredOtp(e.target.value)}
-                      />
-                    </div>
-                    <Button className="w-full" onClick={handleVerifyOtp}>
-                      Verify OTP
-                    </Button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  className="text-sm text-muted-foreground hover:underline w-full text-center"
-                  onClick={() => {
-                    setForgotMode(false);
-                    setOtpSent(false);
-                    setDisplayOtp("");
-                  }}
-                >
-                  Back To Login
-                </button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <Input
+            data-ocid="admin.phone.input"
+            placeholder="MOBILE NUMBER"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+          <Input
+            data-ocid="admin.pass.input"
+            type="password"
+            placeholder="PASSWORD"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+          />
+          {err && (
+            <p
+              data-ocid="admin.login.error_state"
+              className="text-xs text-red-500 font-semibold text-center"
+            >
+              {err}
+            </p>
+          )}
+          <Button
+            data-ocid="admin.login.primary_button"
+            onClick={handleLogin}
+            className="w-full bg-black text-white hover:bg-gray-800 font-bold tracking-widest"
+          >
+            LOGIN
+          </Button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Dashboard Tab ─────────────────────────────────────────────────────────────
-function DashboardTab() {
-  const [wallet, setWallet] = useState(getAdminWallet);
-  const [users, setUsers] = useState(getUsers);
-  const [tasks, setTasksD] = useState(getTasks);
-  const [completions, setCompletions] =
-    useState<TaskCompletion[]>(getCompletions);
-  const [withdrawals, setWithdrawals] = useState(getWithdrawals);
-
-  const _refreshAll = () => {
-    setWallet(getAdminWallet());
-    setUsers(getUsers());
-    setTasksD(getTasks());
-    setCompletions(getCompletions());
-    setWithdrawals(getWithdrawals());
-  };
+// ──────────────────────────────────────────────────────────────
+// MAIN APP
+// ──────────────────────────────────────────────────────────────
+function AdminApp({ onLogout }: { onLogout: () => void }) {
+  const { actor } = useActor();
+  const actorRef = useRef<any>(null);
+  const [tab, setTab] = useState<AdminTab>("dashboard");
+  const [tasks, setTasks] = useState<RMTask[]>([]);
+  const [users, setUsers] = useState<RMUser[]>([]);
+  const [completions, setCompletions] = useState<RMTaskCompletion[]>([]);
+  const [withdrawals, setWithdrawals] = useState<RMWithdrawalRequest[]>([]);
+  const [wallet, setWallet] = useState<RMAdminWallet | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setWallet(getAdminWallet());
-      setUsers(getUsers());
-      setTasksD(getTasks());
-      setCompletions(getCompletions());
-      setWithdrawals(getWithdrawals());
-    }, 3000);
-    return () => clearInterval(id);
-  }, []);
+    if (actor) actorRef.current = actor;
+  }, [actor]);
 
-  const pendingCount = withdrawals.filter((w) => w.status === "pending").length;
-
-  const handleConfirmCompletion = (completionId: string) => {
-    const completion = getCompletions().find((c) => c.id === completionId);
-
-    // Mark completion as confirmed
-    const all = getCompletions().map((c) =>
-      c.id === completionId
-        ? {
-            ...c,
-            adminConfirmed: true,
-            adminConfirmedAt: new Date().toISOString(),
-          }
-        : c,
-    );
-    saveCompletions(all);
-    setCompletions(all);
-
-    if (completion) {
-      const task = getTasks().find((t) => t.id === completion.taskId);
-      const taskCoins = task?.coinsReward ?? 0;
-      const allUsers = getUsers();
-      const completingUser = allUsers.find((u) => u.id === completion.userId);
-
-      // Check if this is user's first confirmed completion
-      const priorConfirmed = all.filter(
-        (c) =>
-          c.userId === completion.userId &&
-          c.adminConfirmed &&
-          c.id !== completionId,
-      ).length;
-      const isFirstTask =
-        priorConfirmed === 0 && !completingUser?.hasCompletedFirstTask;
-
-      const updatedUsers = allUsers.map((u) => {
-        if (u.id === completingUser?.id) {
-          let refBonus = 0;
-          if (isFirstTask && u.referredBy) refBonus = 2000; // ₹20 friend bonus
-          return {
-            ...u,
-            coinBalance: u.coinBalance + taskCoins,
-            referralCoinBalance: u.referralCoinBalance + refBonus,
-            hasCompletedFirstTask: u.hasCompletedFirstTask || isFirstTask,
-          };
-        }
-        if (
-          isFirstTask &&
-          completingUser?.referredBy &&
-          u.referralCode === completingUser.referredBy
-        ) {
-          return { ...u, referralCoinBalance: u.referralCoinBalance + 5000 }; // ₹50 referrer bonus
-        }
-        return u;
-      });
-      saveUsers(updatedUsers);
-      setUsers(updatedUsers);
-
-      const creditedRs = (taskCoins / 100).toFixed(2);
-      if (isFirstTask && completingUser?.referredBy) {
-        toast.success(
-          `✅ TASK CONFIRMED! ₹${creditedRs} CREDITED TO USER WALLET + REFERRAL BONUSES AWARDED`,
-        );
-      } else {
-        toast.success(
-          `✅ TASK CONFIRMED! ₹${creditedRs} CREDITED TO USER WALLET`,
-        );
-      }
-    } else {
-      toast.success("Task completion confirmed!");
+  const refresh = async () => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    try {
+      const [t, u, c, w, wl] = await Promise.all([
+        a.getTasks(),
+        a.getAllUsers(),
+        a.getAllPendingCompletions(),
+        a.getAllPendingWithdrawals(),
+        a.getAdminWallet(),
+      ]);
+      setTasks(t);
+      setUsers(u);
+      setCompletions(c);
+      setWithdrawals(w);
+      setWallet(wl);
+    } catch (e) {
+      console.error("Refresh error", e);
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: polling interval intentional
+  useEffect(() => {
+    if (!actor) return;
+    actorRef.current = actor;
+    refresh();
+    const interval = setInterval(refresh, 3000);
+    return () => clearInterval(interval);
+  }, [actor]);
+
+  const manualRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+    toast.success("REFRESHED");
+  };
+
+  const navItems: {
+    id: AdminTab;
+    icon: React.FC<{ size?: number }>;
+    label: string;
+    badge?: number;
+  }[] = [
+    {
+      id: "dashboard",
+      icon: LayoutDashboard,
+      label: "DASHBOARD",
+      badge: completions.length,
+    },
+    { id: "tasks", icon: ListTodo, label: "TASKS" },
+    { id: "users", icon: Users, label: "USERS" },
+    {
+      id: "withdrawals",
+      icon: CreditCard,
+      label: "WITHDRAWALS",
+      badge: withdrawals.length,
+    },
+    { id: "wallet", icon: Wallet, label: "WALLET" },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-primary/30">
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Wallet Balance</p>
-            <p className="text-2xl font-bold text-primary">
-              ₹{wallet.balance.toFixed(2)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card
-          className={
-            pendingCount > 0 ? "border-red-400 bg-red-50" : "border-accent/30"
-          }
-        >
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Pending Withdrawals</p>
-            <p
-              className={`text-2xl font-bold ${pendingCount > 0 ? "text-red-600" : "text-accent-foreground"}`}
+    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+      {/* Sidebar (desktop) */}
+      <aside className="hidden md:flex flex-col w-60 bg-white border-r border-gray-200 min-h-screen">
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-orange-300">
+              <img
+                src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1-1.jpeg"
+                alt="RM"
+                className="w-full h-full object-cover scale-[2.2]"
+              />
+            </div>
+            <div>
+              <p className="font-black text-sm tracking-widest">RMMONEY ₹</p>
+              <p className="text-xs text-gray-500">ADMIN</p>
+            </div>
+          </div>
+        </div>
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map(({ id, icon: Icon, label, badge }) => (
+            <button
+              type="button"
+              key={id}
+              data-ocid={`admin.${id}.tab`}
+              onClick={() => setTab(id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+                tab === id
+                  ? "bg-black text-white"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
             >
-              {pendingCount}
-            </p>
-            {pendingCount > 0 && (
-              <p className="text-xs text-red-500 font-semibold mt-1">
-                TAP WITHDRAWALS TAB TO PROCESS
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Total Users</p>
-            <p className="text-2xl font-bold text-foreground">{users.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Active Tasks</p>
-            <p className="text-2xl font-bold text-foreground">
-              {tasks.filter((t) => t.active).length}
-            </p>
-          </CardContent>
-        </Card>
+              <Icon size={16} />
+              <span className="flex-1 text-left tracking-wider">{label}</span>
+              {badge !== undefined && badge > 0 && (
+                <span className="bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                  {badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="p-4 border-t border-gray-100">
+          <Button
+            variant="outline"
+            onClick={onLogout}
+            className="w-full text-sm font-bold"
+          >
+            <LogOut size={14} className="mr-2" /> LOGOUT
+          </Button>
+        </div>
+      </aside>
+
+      {/* Content */}
+      <div className="flex-1 flex flex-col min-h-screen">
+        {/* Mobile Header */}
+        <header className="md:hidden bg-black text-white p-3 flex items-center justify-between sticky top-0 z-40">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-yellow-400">
+              <img
+                src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1-1.jpeg"
+                alt="RM"
+                className="w-full h-full object-cover scale-[2.2]"
+              />
+            </div>
+            <span className="font-bold text-sm tracking-widest text-yellow-400">
+              RMMONEY ADMIN ₹
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={manualRefresh}
+              className="p-1 text-gray-400"
+            >
+              <RefreshCw
+                size={16}
+                className={refreshing ? "animate-spin" : ""}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="p-1 text-gray-400"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </header>
+
+        {/* Desktop top bar */}
+        <div className="hidden md:flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
+          <h1 className="font-black text-lg tracking-widest">
+            {navItems.find((n) => n.id === tab)?.label}
+          </h1>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={manualRefresh}
+              className="flex items-center gap-1 text-sm text-gray-500 hover:text-black"
+            >
+              <RefreshCw
+                size={14}
+                className={refreshing ? "animate-spin" : ""}
+              />{" "}
+              REFRESH
+            </button>
+            <div className="text-sm text-gray-500">AUTO-REFRESH: 3S</div>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="text-sm text-gray-500 hover:text-red-500 flex items-center gap-1"
+            >
+              <LogOut size={14} /> LOGOUT
+            </button>
+          </div>
+        </div>
+
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-6">
+          {tab === "dashboard" && (
+            <DashboardTab
+              completions={completions}
+              users={users}
+              actor={actor}
+              actorRef={actorRef}
+              onRefresh={refresh}
+              tasks={tasks}
+            />
+          )}
+          {tab === "tasks" && (
+            <TasksTab
+              tasks={tasks}
+              actor={actor}
+              actorRef={actorRef}
+              onRefresh={refresh}
+            />
+          )}
+          {tab === "users" && <UsersTab users={users} />}
+          {tab === "withdrawals" && (
+            <WithdrawalsTab
+              withdrawals={withdrawals}
+              users={users}
+              actor={actor}
+              actorRef={actorRef}
+              onRefresh={refresh}
+              wallet={wallet}
+              setWallet={setWallet}
+            />
+          )}
+          {tab === "wallet" && (
+            <WalletTab
+              wallet={wallet}
+              actor={actor}
+              actorRef={actorRef}
+              onRefresh={refresh}
+            />
+          )}
+        </main>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Live Task Completions</CardTitle>
-          <p className="text-xs text-amber-600 font-semibold">
-            ⚠️ ADMIN MUST CONFIRM TO CREDIT USER COINS
-          </p>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User Name</TableHead>
-                <TableHead>User ID</TableHead>
-                <TableHead>Task</TableHead>
-                <TableHead>Completed At</TableHead>
-                <TableHead>Admin Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {completions
-                .slice()
-                .reverse()
-                .slice(0, 20)
-                .map((c) => {
-                  const user = users.find((u) => u.id === c.userId);
-                  const task = tasks.find((t) => t.id === c.taskId);
-                  return (
-                    <TableRow key={c.id}>
-                      <TableCell>{user?.name ?? "Unknown"}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {c.userId}
-                      </TableCell>
-                      <TableCell>{task?.title ?? "Unknown Task"}</TableCell>
-                      <TableCell>
-                        {new Date(c.completedAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        {c.adminConfirmed ? (
-                          <Badge className="bg-green-600 text-white text-xs">
-                            ✓ Confirmed
-                          </Badge>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7"
-                            onClick={() => handleConfirmCompletion(c.id)}
-                          >
-                            Confirm
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              {completions.length === 0 && (
-                <TableRow data-ocid="dashboard.empty_state">
-                  <TableCell
-                    colSpan={5}
-                    className="text-center text-muted-foreground py-6"
-                  >
-                    No Task Completions Yet
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Mobile Bottom Nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-40">
+        {navItems.map(({ id, icon: Icon, label, badge }) => (
+          <button
+            type="button"
+            key={id}
+            data-ocid={`admin.mobile.${id}.tab`}
+            onClick={() => setTab(id)}
+            className={`flex-1 py-2 flex flex-col items-center gap-0.5 transition-colors relative ${
+              tab === id ? "text-black" : "text-gray-400"
+            }`}
+          >
+            <Icon size={18} />
+            <span className="text-[9px] font-bold tracking-wide">
+              {label.split(" ")[0]}
+            </span>
+            {badge !== undefined && badge > 0 && (
+              <span className="absolute top-1 right-1/4 bg-red-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">
+                {badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
 
-// ─── Tasks Tab ─────────────────────────────────────────────────────────────────
-function TasksTab() {
-  const [tasks, setTasksState] = useState<Task[]>(getTasks);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editTask, setEditTask] = useState<Task | null>(null);
+// ──────────────────────────────────────────────────────────────
+// DASHBOARD TAB
+// ──────────────────────────────────────────────────────────────
+function DashboardTab({
+  completions,
+  users,
+  actor,
+  actorRef,
+  onRefresh,
+  tasks,
+}: {
+  completions: RMTaskCompletion[];
+  users: RMUser[];
+  tasks: RMTask[];
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+}) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const handleConfirm = async (comp: RMTaskCompletion) => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    setConfirming(comp.id);
+    try {
+      const ok = await a.confirmCompletion(comp.id);
+      if (ok) {
+        // Credit user coins + referral bonus
+        const userRes = await a.getUserById(comp.userId);
+        if (userRes.length > 0) {
+          const u = userRes[0];
+          const taskRes = tasks.find((t) => t.id === comp.taskId);
+          const reward = taskRes ? taskRes.coinsReward : BigInt(0);
+          let newBalance = BigInt(Number(u.coinBalance) + Number(reward));
+          let refBalance = u.referralCoinBalance;
+          let hasCompleted = u.hasCompletedFirstTask;
+
+          // First task bonus
+          if (!u.hasCompletedFirstTask) {
+            hasCompleted = true;
+            newBalance = BigInt(Number(newBalance) + 200); // friend gets 200 coins
+            // Credit referrer
+            if (u.referredBy) {
+              const refRes = await a.getUserById(u.referredBy);
+              if (refRes.length > 0) {
+                const referrer = refRes[0];
+                await a.updateUser({
+                  ...referrer,
+                  referralCoinBalance: BigInt(
+                    Number(referrer.referralCoinBalance) + 500,
+                  ),
+                });
+              }
+            }
+          }
+
+          await a.updateUser({
+            ...u,
+            coinBalance: newBalance,
+            referralCoinBalance: refBalance,
+            hasCompletedFirstTask: hasCompleted,
+          });
+        }
+        toast.success("TASK CONFIRMED! COINS CREDITED.");
+        onRefresh();
+      } else {
+        toast.error("CONFIRMATION FAILED.");
+      }
+    } catch {
+      toast.error("ERROR CONFIRMING TASK.");
+    } finally {
+      setConfirming(null);
+    }
+  };
+
+  const getUserInfo = (userId: string) => users.find((u) => u.id === userId);
+  const getTaskName = (taskId: string) =>
+    tasks.find((t) => t.id === taskId)?.title || taskId;
+
+  return (
+    <div className="p-4 md:p-6 space-y-4" data-ocid="dashboard.section">
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="TOTAL USERS" value={users.length} color="blue" />
+        <StatCard
+          label="PENDING TASKS"
+          value={completions.length}
+          color="yellow"
+        />
+        <StatCard label="TOTAL TASKS" value={tasks.length} color="green" />
+        <StatCard label="LIVE TRACKING" value="🟢 ON" color="red" isText />
+      </div>
+
+      {/* Pending Completions */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h2 className="font-black text-sm tracking-widest">
+            PENDING TASK COMPLETIONS ({completions.length})
+          </h2>
+        </div>
+        {completions.length === 0 ? (
+          <div
+            data-ocid="dashboard.empty_state"
+            className="p-8 text-center text-gray-400"
+          >
+            <CheckCircle className="mx-auto mb-2 opacity-40" size={32} />
+            <p className="font-bold text-sm">NO PENDING COMPLETIONS</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {completions.map((comp, i) => {
+              const u = getUserInfo(comp.userId);
+              return (
+                <div
+                  key={comp.id}
+                  data-ocid={`dashboard.item.${i + 1}`}
+                  className="p-4 flex items-center gap-3"
+                >
+                  <Avatar className="w-10 h-10 flex-shrink-0">
+                    <AvatarImage src={u?.profilePhotoUrl} />
+                    <AvatarFallback className="bg-orange-100 text-orange-600 font-bold text-sm">
+                      {u?.name?.charAt(0) || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm truncate">
+                      {u?.name?.toUpperCase() || "UNKNOWN USER"}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {u?.userId} · {getTaskName(comp.taskId).toUpperCase()}
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      {new Date(Number(comp.submittedAt)).toLocaleString()}
+                    </p>
+                  </div>
+                  <Button
+                    data-ocid={`dashboard.confirm_button.${i + 1}`}
+                    onClick={() => handleConfirm(comp)}
+                    disabled={confirming === comp.id}
+                    size="sm"
+                    className="bg-green-500 hover:bg-green-600 text-white font-bold text-xs flex-shrink-0"
+                  >
+                    {confirming === comp.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle size={14} className="mr-1" /> CONFIRM
+                      </>
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  color,
+  isText,
+}: { label: string; value: number | string; color: string; isText?: boolean }) {
+  const colors: Record<string, string> = {
+    blue: "text-blue-600",
+    yellow: "text-yellow-600",
+    green: "text-green-600",
+    red: "text-red-600",
+  };
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm">
+      <p
+        className={`${isText ? "text-lg" : "text-2xl"} font-black ${colors[color] || "text-gray-800"}`}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] font-bold text-gray-500 tracking-wider mt-1">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// TASKS TAB
+// ──────────────────────────────────────────────────────────────
+function TasksTab({
+  tasks,
+  actor,
+  actorRef,
+  onRefresh,
+}: {
+  tasks: RMTask[];
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<RMTask | null>(null);
   const [form, setForm] = useState({
-    sequence: "",
     title: "",
     description: "",
     rules: "",
-    price: "",
     url: "",
-    apkImageUrl: "",
     coinsReward: "",
+    sequence: "",
+    imageUrl: "",
     active: true,
   });
-
-  const refresh = () => setTasksState(getTasks());
+  const [busy, setBusy] = useState(false);
+  const { upload, uploading } = useUpload();
 
   const openAdd = () => {
-    setEditTask(null);
+    setEditing(null);
     setForm({
-      sequence: "",
       title: "",
       description: "",
       rules: "",
-      price: "",
       url: "",
-      apkImageUrl: "",
       coinsReward: "",
+      sequence: String(tasks.length + 1),
+      imageUrl: "",
       active: true,
     });
-    setDialogOpen(true);
+    setOpen(true);
   };
 
-  const openEdit = (task: Task) => {
-    setEditTask(task);
+  const openEdit = (task: RMTask) => {
+    setEditing(task);
     setForm({
-      sequence: task.sequence.toString(),
       title: task.title,
       description: task.description,
-      rules: task.rules ?? "",
-      price: task.price?.toString() ?? "",
+      rules: task.rules,
       url: task.url,
-      apkImageUrl: task.apkImageUrl ?? "",
-      coinsReward: task.coinsReward.toString(),
+      coinsReward: String(Number(task.coinsReward)),
+      sequence: String(Number(task.sequence)),
+      imageUrl: task.imageUrl,
       active: task.active,
     });
-    setDialogOpen(true);
+    setOpen(true);
   };
 
-  const handleSave = () => {
-    if (!form.title || !form.url || !form.sequence) {
-      toast.error("Please fill required fields");
+  const handleSave = async () => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    if (!form.title.trim()) {
+      toast.error("ENTER TASK TITLE");
       return;
     }
-    const current = getTasks();
-    if (editTask) {
-      const updated = current.map((t) =>
-        t.id === editTask.id
-          ? {
-              ...t,
-              sequence: Number(form.sequence),
-              title: form.title,
-              description: form.description,
-              rules: form.rules || undefined,
-              price: form.price ? Number(form.price) : undefined,
-              url: form.url,
-              apkImageUrl: form.apkImageUrl,
-              coinsReward: Number(form.coinsReward) || 100,
-              active: form.active,
-            }
-          : t,
-      );
-      saveTasks(updated);
-    } else {
-      const newTask: Task = {
-        id: generateId(),
-        sequence: Number(form.sequence),
-        title: form.title,
-        description: form.description,
-        rules: form.rules || undefined,
-        price: form.price ? Number(form.price) : undefined,
-        url: form.url,
-        apkImageUrl: form.apkImageUrl,
-        coinsReward: Number(form.coinsReward) || 100,
+    setBusy(true);
+    try {
+      const task: RMTask = {
+        id: editing?.id || generateId(),
+        sequence: BigInt(Number.parseInt(form.sequence) || 1),
+        title: form.title.trim(),
+        description: form.description.trim(),
+        rules: form.rules.trim(),
+        url: form.url.trim(),
+        imageUrl: form.imageUrl,
+        coinsReward: BigInt(Number.parseInt(form.coinsReward) || 0),
         active: form.active,
       };
-      saveTasks([...current, newTask]);
+      if (editing) {
+        await a.updateTask(task);
+        toast.success("TASK UPDATED!");
+      } else {
+        await a.addTask(task);
+        toast.success("TASK ADDED!");
+      }
+      setOpen(false);
+      onRefresh();
+    } catch {
+      toast.error("SAVE FAILED.");
+    } finally {
+      setBusy(false);
     }
-    setDialogOpen(false);
-    refresh();
-    toast.success(editTask ? "Task updated!" : "Task added!");
   };
 
-  const handleDelete = (id: string) => {
-    saveTasks(getTasks().filter((t) => t.id !== id));
-    refresh();
-    toast.success("Task deleted");
+  const handleDelete = async (id: string) => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    try {
+      await a.deleteTask(id);
+      toast.success("TASK DELETED.");
+      onRefresh();
+    } catch {
+      toast.error("DELETE FAILED.");
+    }
   };
 
-  const toggleActive = (task: Task) => {
-    saveTasks(
-      getTasks().map((t) =>
-        t.id === task.id ? { ...t, active: !t.active } : t,
-      ),
-    );
-    refresh();
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    try {
+      const url = await upload(e.target.files[0]);
+      setForm((f) => ({ ...f, imageUrl: url }));
+      toast.success("IMAGE UPLOADED!");
+    } catch {
+      toast.error("IMAGE UPLOAD FAILED");
+    }
   };
 
-  const sorted = [...tasks].sort((a, b) => a.sequence - b.sequence);
+  const sorted = [...tasks].sort(
+    (a, b) => Number(a.sequence) - Number(b.sequence),
+  );
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Tasks ({tasks.length})</h2>
-        <Button
-          data-ocid="admin.tasks.add_button"
-          onClick={openAdd}
-          className="bg-primary text-primary-foreground"
-        >
-          + Add Task
-        </Button>
+    <div className="p-4 md:p-6 space-y-4" data-ocid="tasks.section">
+      <div className="flex items-center justify-between">
+        <h2 className="font-black text-sm tracking-widest">
+          TASK MANAGEMENT ({tasks.length})
+        </h2>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button
+              data-ocid="tasks.open_modal_button"
+              onClick={openAdd}
+              size="sm"
+              className="bg-black text-white hover:bg-gray-800 font-bold"
+            >
+              <Plus size={14} className="mr-1" /> ADD TASK
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-white max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="font-black tracking-widest">
+                {editing ? "EDIT TASK" : "ADD NEW TASK"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 mt-4">
+              <Input
+                data-ocid="tasks.title.input"
+                placeholder="TASK TITLE"
+                value={form.title}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, title: e.target.value }))
+                }
+              />
+              <Textarea
+                data-ocid="tasks.desc.textarea"
+                placeholder="DESCRIPTION"
+                value={form.description}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, description: e.target.value }))
+                }
+                rows={3}
+              />
+              <Textarea
+                placeholder="RULES (OPTIONAL)"
+                value={form.rules}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, rules: e.target.value }))
+                }
+                rows={2}
+              />
+              <Input
+                placeholder="URL / LINK"
+                value={form.url}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, url: e.target.value }))
+                }
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  data-ocid="tasks.coins.input"
+                  type="number"
+                  placeholder="COINS REWARD"
+                  value={form.coinsReward}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, coinsReward: e.target.value }))
+                  }
+                />
+                <Input
+                  type="number"
+                  placeholder="SEQUENCE #"
+                  value={form.sequence}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, sequence: e.target.value }))
+                  }
+                />
+              </div>
+
+              {/* Image Upload */}
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-3">
+                <p className="text-xs font-bold text-gray-500 mb-2">
+                  TASK IMAGE (OPTIONAL)
+                </p>
+                {form.imageUrl && (
+                  <img
+                    src={form.imageUrl}
+                    alt="task"
+                    className="w-full h-32 object-cover rounded-lg mb-2"
+                  />
+                )}
+                <label
+                  htmlFor="task-image-input"
+                  className="flex items-center gap-2 cursor-pointer text-sm text-orange-600 font-bold hover:text-orange-700"
+                >
+                  {uploading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Image size={16} />
+                  )}
+                  <span>{uploading ? "UPLOADING..." : "UPLOAD PHOTO"}</span>
+                  <input
+                    data-ocid="tasks.upload_button"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  data-ocid="tasks.save_button"
+                  onClick={handleSave}
+                  disabled={busy}
+                  className="flex-1 bg-black text-white hover:bg-gray-800 font-bold"
+                >
+                  {busy ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : editing ? (
+                    "UPDATE TASK"
+                  ) : (
+                    "ADD TASK"
+                  )}
+                </Button>
+                <Button
+                  data-ocid="tasks.cancel_button"
+                  variant="outline"
+                  onClick={() => setOpen(false)}
+                  className="flex-1 font-bold"
+                >
+                  CANCEL
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <div className="space-y-3">
-        {sorted.map((task, idx) => (
-          <Card
-            key={task.id}
-            data-ocid={`admin.tasks.item.${idx + 1}`}
-            className="border-border"
-          >
-            <CardContent className="pt-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">
-                    {task.sequence}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">
-                      {task.title}
+      {sorted.length === 0 ? (
+        <div
+          data-ocid="tasks.empty_state"
+          className="bg-white rounded-xl p-8 text-center text-gray-400 shadow-sm"
+        >
+          <ListTodo className="mx-auto mb-2 opacity-40" size={32} />
+          <p className="font-bold text-sm">NO TASKS YET</p>
+          <p className="text-xs mt-1">ADD YOUR FIRST TASK ABOVE</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sorted.map((task, i) => (
+            <div
+              key={task.id}
+              data-ocid={`tasks.item.${i + 1}`}
+              className="bg-white rounded-xl shadow-sm overflow-hidden"
+            >
+              <div className="flex items-start gap-3 p-4">
+                {task.imageUrl && (
+                  <img
+                    src={task.imageUrl}
+                    alt={task.title}
+                    className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="bg-black text-yellow-400 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black">
+                      {Number(task.sequence)}
+                    </span>
+                    <p className="font-black text-sm truncate">
+                      {task.title.toUpperCase()}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {task.url}
+                  </div>
+                  <p className="text-xs text-gray-500 line-clamp-2">
+                    {task.description}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge variant="secondary" className="text-xs">
+                      🪙 {Number(task.coinsReward)} COINS = ₹
+                      {(Number(task.coinsReward) / 100).toFixed(2)}
+                    </Badge>
+                    <Badge
+                      variant={task.active ? "default" : "outline"}
+                      className="text-xs"
+                    >
+                      {task.active ? "ACTIVE" : "INACTIVE"}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 flex-shrink-0">
+                  <Button
+                    data-ocid={`tasks.edit_button.${i + 1}`}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEdit(task)}
+                    className="font-bold text-xs"
+                  >
+                    <Edit size={12} className="mr-1" /> EDIT
+                  </Button>
+                  <Button
+                    data-ocid={`tasks.delete_button.${i + 1}`}
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(task.id)}
+                    className="font-bold text-xs"
+                  >
+                    <Trash2 size={12} className="mr-1" /> DEL
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// USERS TAB
+// ──────────────────────────────────────────────────────────────
+function UsersTab({ users }: { users: RMUser[] }) {
+  return (
+    <div className="p-4 md:p-6" data-ocid="users.section">
+      <h2 className="font-black text-sm tracking-widest mb-4">
+        ALL USERS ({users.length}){" "}
+        <span className="text-xs text-green-500 font-normal">🟢 LIVE</span>
+      </h2>
+      {users.length === 0 ? (
+        <div
+          data-ocid="users.empty_state"
+          className="bg-white rounded-xl p-8 text-center text-gray-400 shadow-sm"
+        >
+          <Users className="mx-auto mb-2 opacity-40" size={32} />
+          <p className="font-bold text-sm">NO USERS YET</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {users.map((u, i) => (
+            <div
+              key={u.id}
+              data-ocid={`users.item.${i + 1}`}
+              className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3"
+            >
+              <Avatar className="w-10 h-10 flex-shrink-0">
+                <AvatarImage src={u.profilePhotoUrl} />
+                <AvatarFallback className="bg-orange-100 text-orange-600 font-bold">
+                  {u.name.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm truncate">
+                  {u.name.toUpperCase()}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {u.userId} · {u.phone}
+                </p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-xs font-bold text-orange-600">
+                  🪙 {Number(u.coinBalance)}
+                </p>
+                <p className="text-[10px] text-gray-400">
+                  {new Date(Number(u.createdAt)).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// WITHDRAWALS TAB
+// ──────────────────────────────────────────────────────────────
+function WithdrawalsTab({
+  withdrawals,
+  users,
+  actor,
+  actorRef,
+  onRefresh,
+  wallet,
+  setWallet: _setWallet,
+}: {
+  withdrawals: RMWithdrawalRequest[];
+  users: RMUser[];
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+  wallet: RMAdminWallet | null;
+  setWallet: (w: RMAdminWallet) => void;
+}) {
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  const getUserInfo = (userId: string) => users.find((u) => u.id === userId);
+
+  const handleApprove = async (w: RMWithdrawalRequest) => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    if (!wallet) {
+      toast.error("WALLET NOT LOADED");
+      return;
+    }
+    if (Number(wallet.balance) < Number(w.amountRs)) {
+      toast.error("INSUFFICIENT ADMIN WALLET BALANCE");
+      return;
+    }
+    setProcessing(w.id);
+    try {
+      await a.approveWithdrawal(w.id);
+      await a.updateAdminWallet({
+        ...wallet,
+        balance: BigInt(Number(wallet.balance) - Number(w.amountRs)),
+      });
+      toast.success(
+        `₹${Number(w.amountRs)} APPROVED! SEND TO UPI: ${w.userUpiId}`,
+      );
+      onRefresh();
+    } catch {
+      toast.error("APPROVAL FAILED.");
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    const a = actorRef.current || actor;
+    if (!a) return;
+    setProcessing(id);
+    try {
+      await a.rejectWithdrawal(id);
+      // Refund user coins
+      const wReq = withdrawals.find((w) => w.id === id);
+      if (wReq) {
+        const userRes = await a.getUserById(wReq.userId);
+        if (userRes.length > 0) {
+          const u = userRes[0];
+          if (wReq.withdrawalType === "referral") {
+            await a.updateUser({
+              ...u,
+              referralCoinBalance: BigInt(
+                Number(u.referralCoinBalance) + Number(wReq.coins),
+              ),
+            });
+          } else {
+            await a.updateUser({
+              ...u,
+              coinBalance: BigInt(Number(u.coinBalance) + Number(wReq.coins)),
+            });
+          }
+        }
+      }
+      toast.success("WITHDRAWAL REJECTED. COINS REFUNDED.");
+      onRefresh();
+    } catch {
+      toast.error("REJECTION FAILED.");
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  return (
+    <div className="p-4 md:p-6 space-y-4" data-ocid="withdrawals.section">
+      <h2 className="font-black text-sm tracking-widest">
+        PENDING WITHDRAWALS ({withdrawals.length})
+      </h2>
+
+      {wallet && (
+        <div className="bg-black text-yellow-400 rounded-xl p-4">
+          <p className="text-xs opacity-70">ADMIN WALLET BALANCE</p>
+          <p className="text-2xl font-black">₹{Number(wallet.balance)}</p>
+          {wallet.upiId && (
+            <p className="text-xs opacity-70 mt-1">UPI: {wallet.upiId}</p>
+          )}
+        </div>
+      )}
+
+      {withdrawals.length === 0 ? (
+        <div
+          data-ocid="withdrawals.empty_state"
+          className="bg-white rounded-xl p-8 text-center text-gray-400 shadow-sm"
+        >
+          <CreditCard className="mx-auto mb-2 opacity-40" size={32} />
+          <p className="font-bold text-sm">NO PENDING WITHDRAWALS</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {withdrawals.map((w, i) => {
+            const u = getUserInfo(w.userId);
+            return (
+              <div
+                key={w.id}
+                data-ocid={`withdrawals.item.${i + 1}`}
+                className="bg-white rounded-xl shadow-sm p-4"
+              >
+                <div className="flex items-start gap-3 mb-3">
+                  <Avatar className="w-12 h-12 flex-shrink-0">
+                    <AvatarImage src={u?.profilePhotoUrl} />
+                    <AvatarFallback className="bg-orange-100 text-orange-600 font-bold">
+                      {u?.name?.charAt(0) || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <p className="font-black text-sm">
+                      {w.userName.toUpperCase()}
                     </p>
-                    <p className="text-xs text-accent-foreground font-medium">
-                      🪙 {task.coinsReward} coins
-                      {task.price !== undefined && (
-                        <span className="ml-2 text-emerald-400 font-semibold">
-                          ₹{task.price}
-                        </span>
-                      )}
+                    <p className="text-xs text-gray-500">
+                      {u?.userId || w.userId}
+                    </p>
+                    <p className="text-xs font-bold text-orange-600 mt-1">
+                      UPI: {w.userUpiId}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      TYPE: {w.withdrawalType.toUpperCase()}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-black text-green-600">
+                      ₹{Number(w.amountRs)}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(Number(w.requestedAt)).toLocaleString()}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Switch
-                    checked={task.active}
-                    onCheckedChange={() => toggleActive(task)}
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openEdit(task)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => handleDelete(task.id)}
-                  >
-                    Del
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {sorted.length === 0 && (
-          <Card data-ocid="admin.tasks.empty_state">
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No Tasks Yet. Add Your First Task.
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="dark max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editTask ? "Edit Task" : "Add Task"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Sequence #</Label>
-                <Input
-                  type="number"
-                  value={form.sequence}
-                  onChange={(e) =>
-                    setForm({ ...form, sequence: e.target.value })
-                  }
-                  placeholder="1"
-                />
-              </div>
-              <div>
-                <Label>Coins Reward</Label>
-                <Input
-                  type="number"
-                  value={form.coinsReward}
-                  onChange={(e) =>
-                    setForm({ ...form, coinsReward: e.target.value })
-                  }
-                  placeholder="500"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Title *</Label>
-              <Input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="Task Title"
-              />
-            </div>
-            <div>
-              <Label>Description</Label>
-              <Textarea
-                value={form.description}
-                onChange={(e) =>
-                  setForm({ ...form, description: e.target.value })
-                }
-                placeholder="Task Description"
-                rows={2}
-              />
-            </div>
-            <div>
-              <Label>Task Rules</Label>
-              <Textarea
-                value={form.rules}
-                onChange={(e) => setForm({ ...form, rules: e.target.value })}
-                placeholder={
-                  "e.g.\n1. Download the app\n2. Register with your phone\n3. Complete the first order"
-                }
-                rows={4}
-              />
-            </div>
-            <div>
-              <Label>Price (₹)</Label>
-              <Input
-                type="number"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <Label>URL *</Label>
-              <Input
-                value={form.url}
-                onChange={(e) => setForm({ ...form, url: e.target.value })}
-                placeholder="https://..."
-              />
-            </div>
-            <div>
-              <Label>APK Image URL</Label>
-              <Input
-                value={form.apkImageUrl}
-                onChange={(e) =>
-                  setForm({ ...form, apkImageUrl: e.target.value })
-                }
-                placeholder="https://... (optional)"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={form.active}
-                onCheckedChange={(v) => setForm({ ...form, active: v })}
-              />
-              <Label>Active</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              className="bg-primary text-primary-foreground"
-            >
-              Save Task
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ─── Wallet Tab ─────────────────────────────────────────────────────────────────
-function WalletTab() {
-  const [wallet, setWalletState] = useState(getAdminWallet);
-  const [addOpen, setAddOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("UPI");
-  const [upiInput, setUpiInput] = useState(wallet.upiId);
-
-  const refresh = () => setWalletState(getAdminWallet());
-
-  const handleAdd = () => {
-    const amt = Number(amount);
-    if (!amt || amt <= 0) {
-      toast.error("Enter valid amount");
-      return;
-    }
-    const w = getAdminWallet();
-    w.balance += amt;
-    w.transactions.unshift({
-      id: generateId(),
-      type: "credit",
-      amount: amt,
-      method,
-      description: `Added via ${method}`,
-      date: new Date().toISOString(),
-    });
-    saveAdminWallet(w);
-    setAmount("");
-    setAddOpen(false);
-    refresh();
-    toast.success(`₹${amt} added via ${method}`);
-  };
-
-  const saveUpi = () => {
-    const w = getAdminWallet();
-    w.upiId = upiInput.trim();
-    saveAdminWallet(w);
-    refresh();
-    toast.success("Admin UPI ID updated!");
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">Current Balance</p>
-          <p className="text-4xl font-bold font-display text-primary">
-            ₹{wallet.balance.toFixed(2)}
-          </p>
-        </div>
-        <Button
-          data-ocid="admin.wallet.add_button"
-          onClick={() => setAddOpen(true)}
-          className="bg-primary text-primary-foreground"
-        >
-          + Add Money
-        </Button>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Admin UPI ID</CardTitle>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Input
-            data-ocid="admin.wallet.upi.input"
-            value={upiInput}
-            onChange={(e) => setUpiInput(e.target.value)}
-            placeholder="Enter UPI ID (e.g. 9053405019@upi)"
-            className="flex-1"
-          />
-          <Button
-            data-ocid="admin.wallet.upi.save_button"
-            onClick={saveUpi}
-            variant="outline"
-          >
-            Save UPI
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Transaction History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Method</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {wallet.transactions.map((tx) => (
-                <TableRow key={tx.id}>
-                  <TableCell>
-                    <Badge
-                      variant={tx.type === "credit" ? "default" : "destructive"}
-                    >
-                      {tx.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell
-                    className={
-                      tx.type === "credit"
-                        ? "text-primary font-medium"
-                        : "text-destructive font-medium"
-                    }
-                  >
-                    {tx.type === "credit" ? "+" : "-"}₹{tx.amount.toFixed(2)}
-                  </TableCell>
-                  <TableCell>{tx.method}</TableCell>
-                  <TableCell>{tx.description}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(tx.date).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {wallet.transactions.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="text-center text-muted-foreground py-6"
-                  >
-                    No Transactions Yet
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="dark max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Add Money to Wallet</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Amount (₹)</Label>
-              <Input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <Label>Payment Method</Label>
-              <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Cash">Cash</SelectItem>
-                  <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="UPI">UPI</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {method === "UPI" && Number(amount) > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-                  Open Payment App
-                </p>
                 <div className="flex gap-2">
                   <Button
-                    type="button"
+                    data-ocid={`withdrawals.confirm_button.${i + 1}`}
+                    onClick={() => handleApprove(w)}
+                    disabled={!!processing}
                     size="sm"
-                    variant="outline"
-                    className="flex-1 text-xs"
-                    onClick={() =>
-                      window.open(
-                        `upi://pay?pa=rmoney@upi&pn=RMoney&am=${amount}&cu=INR&tn=RMoney+Wallet+TopUp`,
-                        "_blank",
-                      )
-                    }
+                    className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold"
                   >
-                    Google Pay
+                    {processing === w.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle size={14} className="mr-1" /> APPROVE
+                      </>
+                    )}
                   </Button>
                   <Button
-                    type="button"
+                    data-ocid={`withdrawals.delete_button.${i + 1}`}
+                    onClick={() => handleReject(w.id)}
+                    disabled={!!processing}
                     size="sm"
-                    variant="outline"
-                    className="flex-1 text-xs"
-                    onClick={() =>
-                      window.open(
-                        `paytmmp://pay?pa=rmoney@upi&pn=RMoney&am=${amount}&cu=INR`,
-                        "_blank",
-                      )
-                    }
+                    variant="destructive"
+                    className="flex-1 font-bold"
                   >
-                    Paytm
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="flex-1 text-xs"
-                    onClick={() =>
-                      window.open(
-                        `phonepe://pay?pa=rmoney@upi&pn=RMoney&am=${amount}&cu=INR`,
-                        "_blank",
-                      )
-                    }
-                  >
-                    PhonePe
+                    {processing === w.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <>
+                        <XCircle size={14} className="mr-1" /> REJECT
+                      </>
+                    )}
                   </Button>
                 </div>
-                <p className="text-xs text-amber-400 text-center font-medium">
-                  TAP TO OPEN PAYMENT APP, THEN COME BACK AND CLICK ADD MONEY
-                </p>
               </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAdd}
-              className="bg-primary text-primary-foreground"
-            >
-              Add Money
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Withdrawal Tab ─────────────────────────────────────────────────────────────
-function WithdrawalTab({ type }: { type: "task" | "referral" }) {
-  const [withdrawals, setW] = useState<WithdrawalRequest[]>(() =>
-    getWithdrawals().filter((w) => w.type === type),
-  );
-  const [confirmItem, setConfirmItem] = useState<WithdrawalRequest | null>(
-    null,
-  );
-  const [rejectItem, setRejectItem] = useState<WithdrawalRequest | null>(null);
+// ──────────────────────────────────────────────────────────────
+// WALLET TAB
+// ──────────────────────────────────────────────────────────────
+function WalletTab({
+  wallet,
+  actor,
+  actorRef,
+  onRefresh,
+}: {
+  wallet: RMAdminWallet | null;
+  actor: any;
+  actorRef: React.RefObject<any>;
+  onRefresh: () => void;
+}) {
+  const [upiId, setUpiId] = useState(wallet?.upiId || "");
+  const [addAmt, setAddAmt] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const refresh = () => setW(getWithdrawals().filter((w) => w.type === type));
+  const handleUpdateUpi = async () => {
+    const a = actorRef.current || actor;
+    if (!a || !wallet) return;
+    setBusy(true);
+    try {
+      await a.updateAdminWallet({ ...wallet, upiId: upiId.trim() });
+      toast.success("UPI ID UPDATED!");
+      onRefresh();
+    } catch {
+      toast.error("UPDATE FAILED.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  const handleApprove = () => {
-    if (!confirmItem) return;
-    const wallet = getAdminWallet();
-    if (wallet.balance < confirmItem.amountRs) {
-      toast.error("Insufficient admin wallet balance!");
+  const openPaymentApp = (app: string) => {
+    const amt = Number.parseFloat(addAmt);
+    if (!amt || amt <= 0) {
+      toast.error("ENTER AMOUNT FIRST");
       return;
     }
-    wallet.balance -= confirmItem.amountRs;
-    wallet.transactions.unshift({
-      id: generateId(),
-      type: "debit",
-      amount: confirmItem.amountRs,
-      method: "UPI",
-      description: `Withdrawal to ${confirmItem.userName} (${confirmItem.userId}) UPI: ${confirmItem.userUpiId}`,
-      date: new Date().toISOString(),
-    });
-    saveAdminWallet(wallet);
-    const all = getWithdrawals().map((w) =>
-      w.id === confirmItem.id
-        ? {
-            ...w,
-            status: "approved" as const,
-            processedAt: new Date().toISOString(),
-          }
-        : w,
-    );
-    saveWithdrawals(all);
-    // Trigger refresh signal on user side
-    const allUsers = getUsers();
-    const targetUser = allUsers.find((u) => u.id === confirmItem.userId);
-    if (targetUser) {
-      saveUsers(allUsers); // trigger refresh signal
-    }
-    const approvedItem = confirmItem;
-    setConfirmItem(null);
-    refresh();
-    toast.success(
-      `✅ ₹${approvedItem.amountRs} SENT TO ${approvedItem.userUpiId} - ADMIN WALLET DEBITED`,
-    );
+    const upi = wallet?.upiId || "";
+    const urls: Record<string, string> = {
+      paytm: `paytmmp://pay?pa=${upi}&am=${amt}&cu=INR`,
+      gpay: `tez://upi/pay?pa=${upi}&am=${amt}&cu=INR`,
+      phonepe: `phonepe://pay?pa=${upi}&am=${amt}&cu=INR`,
+    };
+    const fallbacks: Record<string, string> = {
+      paytm: "https://paytm.com",
+      gpay: "https://pay.google.com",
+      phonepe: "https://www.phonepe.com",
+    };
+    window.location.href = urls[app] || fallbacks[app];
+    setTimeout(() => {
+      window.location.href = fallbacks[app];
+    }, 1500);
   };
-
-  const handleReject = () => {
-    if (!rejectItem) return;
-    const all = getWithdrawals().map((w) =>
-      w.id === rejectItem.id
-        ? {
-            ...w,
-            status: "rejected" as const,
-            processedAt: new Date().toISOString(),
-          }
-        : w,
-    );
-    saveWithdrawals(all);
-    setRejectItem(null);
-    refresh();
-    toast.success("Withdrawal rejected");
-  };
-
-  const pending = withdrawals.filter((w) => w.status === "pending");
-  const processed = withdrawals.filter((w) => w.status !== "pending");
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">
-          {type === "task" ? "Task" : "Referral"} Withdrawals
-        </h2>
-        {pending.length > 0 && (
-          <Badge variant="destructive">{pending.length} Pending</Badge>
-        )}
+    <div className="p-4 md:p-6 space-y-4" data-ocid="wallet.section">
+      {/* Balance */}
+      <div className="bg-black text-yellow-400 rounded-xl p-5">
+        <p className="text-xs opacity-70">ADMIN WALLET BALANCE</p>
+        <p className="text-4xl font-black mt-1">
+          ₹{wallet ? Number(wallet.balance) : "—"}
+        </p>
+        <p className="text-xs opacity-60 mt-2">
+          ADD MONEY VIA REAL PAYMENT ONLY
+        </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm text-amber-400">
-            ⏳ Pending Requests
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>User ID</TableHead>
-                <TableHead>UPI ID</TableHead>
-                <TableHead>Coins</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pending.map((w, idx) => (
-                <TableRow
-                  key={w.id}
-                  data-ocid={`admin.withdrawals.row.${idx + 1}`}
-                >
-                  <TableCell>
-                    {(() => {
-                      const usr = getUsers().find((u) => u.id === w.userId);
-                      return (
-                        <div className="flex items-center gap-2">
-                          <Avatar className="w-8 h-8">
-                            <AvatarImage src={usr?.profilePhoto} />
-                            <AvatarFallback className="text-xs">
-                              {w.userName.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="text-xs font-medium">{w.userName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {w.userPhone}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {w.userId}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {w.userUpiId}
-                  </TableCell>
-                  <TableCell>🪙 {w.coins}</TableCell>
-                  <TableCell className="font-semibold text-primary">
-                    ₹{w.amountRs.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(w.createdAt).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        data-ocid={`admin.withdrawals.approve_button.${idx + 1}`}
-                        size="sm"
-                        className="bg-primary text-primary-foreground"
-                        onClick={() => setConfirmItem(w)}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => setRejectItem(w)}
-                      >
-                        Reject
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {pending.length === 0 && (
-                <TableRow data-ocid="admin.withdrawals.empty_state">
-                  <TableCell
-                    colSpan={7}
-                    className="text-center text-muted-foreground py-6"
-                  >
-                    No Pending Requests
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {processed.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Processed Requests</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>UPI</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Processed</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {processed.map((w) => (
-                  <TableRow key={w.id}>
-                    <TableCell>
-                      {w.userName}{" "}
-                      <span className="text-xs font-mono text-muted-foreground">
-                        ({w.userId})
-                      </span>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {w.userUpiId}
-                    </TableCell>
-                    <TableCell>₹{w.amountRs.toFixed(2)}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          w.status === "approved" ? "default" : "destructive"
-                        }
-                      >
-                        {w.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {w.processedAt
-                        ? new Date(w.processedAt).toLocaleString()
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Approve Dialog */}
-      <Dialog
-        open={!!confirmItem}
-        onOpenChange={(open) => !open && setConfirmItem(null)}
-      >
-        <DialogContent className="dark max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Confirm Approval</DialogTitle>
-          </DialogHeader>
-          {confirmItem && (
-            <div className="space-y-2 text-sm">
-              <div className="grid grid-cols-2 gap-1">
-                <span className="text-muted-foreground">User Name:</span>
-                <span className="font-semibold">{confirmItem.userName}</span>
-                <span className="text-muted-foreground">User ID:</span>
-                <span className="font-mono">{confirmItem.userId}</span>
-                <span className="text-muted-foreground">UPI ID:</span>
-                <span className="font-mono text-primary">
-                  {confirmItem.userUpiId}
-                </span>
-                <span className="text-muted-foreground">Coins:</span>
-                <span>🪙 {confirmItem.coins}</span>
-                <span className="text-muted-foreground">Amount:</span>
-                <span className="font-bold text-primary text-lg">
-                  ₹{confirmItem.amountRs.toFixed(2)}
-                </span>
-              </div>
-              <div className="mt-3 rounded-lg bg-emerald-900/30 border border-emerald-600/40 p-3 space-y-1">
-                <p className="text-xs font-bold text-emerald-400">
-                  PAYMENT WILL BE SENT TO UPI:
-                </p>
-                <p className="text-sm font-mono font-bold text-emerald-300">
-                  {confirmItem.userUpiId}
-                </p>
-              </div>
-              <div className="rounded-lg bg-red-900/30 border border-red-600/40 p-3 space-y-1">
-                <p className="text-xs font-bold text-red-400">
-                  ADMIN WALLET AFTER DEDUCTION:
-                </p>
-                <p className="text-sm font-bold text-red-300">
-                  ₹
-                  {(getAdminWallet().balance - confirmItem.amountRs).toFixed(2)}
-                </p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              data-ocid="admin.withdrawals.cancel_button"
-              variant="outline"
-              onClick={() => setConfirmItem(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              data-ocid="admin.withdrawals.confirm_button"
-              className="bg-primary text-primary-foreground"
-              onClick={handleApprove}
-            >
-              Confirm Approve
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Dialog */}
-      <Dialog
-        open={!!rejectItem}
-        onOpenChange={(open) => !open && setRejectItem(null)}
-      >
-        <DialogContent className="dark max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Reject Withdrawal?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm">
-            Are you sure you want to reject the withdrawal request from{" "}
-            <strong>{rejectItem?.userName}</strong>?
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectItem(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleReject}>
-              Reject
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ─── Users Tab ─────────────────────────────────────────────────────────────────
-function UsersTab() {
-  const [users, setUsers] = useState(getUsers);
-  useEffect(() => {
-    const id = setInterval(() => setUsers(getUsers()), 2000);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">All Users ({users.length})</h2>
-      <Card>
-        <CardContent className="pt-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>User ID</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Coins</TableHead>
-                <TableHead>Referral Coins</TableHead>
-                <TableHead>UPI ID</TableHead>
-                <TableHead>Joined</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{u.id}</TableCell>
-                  <TableCell>{u.phone}</TableCell>
-                  <TableCell>🪙 {u.coinBalance}</TableCell>
-                  <TableCell>🪙 {u.referralCoinBalance}</TableCell>
-                  <TableCell className="text-xs">{u.upiId || "—"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(u.createdAt).toLocaleDateString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {users.length === 0 && (
-                <TableRow data-ocid="admin.users.empty_state">
-                  <TableCell
-                    colSpan={7}
-                    className="text-center text-muted-foreground py-6"
-                  >
-                    No Users Registered Yet
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ─── Admin Dashboard ───────────────────────────────────────────────────────────
-function AdminDashboard({ onLogout }: { onLogout: () => void }) {
-  const withdrawals = getWithdrawals();
-  const taskPending = withdrawals.filter(
-    (w) => w.type === "task" && w.status === "pending",
-  ).length;
-  const refPending = withdrawals.filter(
-    (w) => w.type === "referral" && w.status === "pending",
-  ).length;
-
-  return (
-    <div className="dark min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 bg-background z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
-            <img
-              src="/assets/uploads/WhatsApp-Image-2026-03-14-at-6.32.40-AM-1.jpeg"
-              alt="RMoney"
-              className="w-full h-full object-cover object-center scale-150"
-            />
-          </div>
-          <span className="font-display font-bold text-xl text-foreground">
-            RMoney Admin
-          </span>
+      {/* Add Money */}
+      <div className="bg-white rounded-xl p-4 shadow-sm space-y-3">
+        <h3 className="font-black text-xs tracking-widest">ADD MONEY</h3>
+        <Input
+          data-ocid="wallet.amount.input"
+          type="number"
+          placeholder="AMOUNT IN ₹"
+          value={addAmt}
+          onChange={(e) => setAddAmt(e.target.value)}
+        />
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            data-ocid="wallet.paytm.button"
+            onClick={() => openPaymentApp("paytm")}
+            className="font-bold text-xs bg-blue-600 hover:bg-blue-700 text-white h-11"
+          >
+            PAYTM
+          </Button>
+          <Button
+            data-ocid="wallet.gpay.button"
+            onClick={() => openPaymentApp("gpay")}
+            className="font-bold text-xs bg-green-600 hover:bg-green-700 text-white h-11"
+          >
+            GOOGLE PAY
+          </Button>
+          <Button
+            data-ocid="wallet.phonepe.button"
+            onClick={() => openPaymentApp("phonepe")}
+            className="font-bold text-xs bg-purple-600 hover:bg-purple-700 text-white h-11"
+          >
+            PHONEPE
+          </Button>
         </div>
+      </div>
+
+      {/* UPI Settings */}
+      <div className="bg-white rounded-xl p-4 shadow-sm space-y-3">
+        <h3 className="font-black text-xs tracking-widest">ADMIN UPI ID</h3>
+        <Input
+          data-ocid="wallet.upi.input"
+          placeholder="YOUR UPI ID"
+          value={upiId}
+          onChange={(e) => setUpiId(e.target.value)}
+        />
         <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setAdminSession(false);
-            onLogout();
-          }}
+          data-ocid="wallet.save_button"
+          onClick={handleUpdateUpi}
+          disabled={busy}
+          className="w-full bg-black text-white hover:bg-gray-800 font-bold"
         >
-          Logout
+          {busy ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            "SAVE UPI ID"
+          )}
         </Button>
-      </header>
-
-      {/* Main */}
-      <main className="p-6">
-        <Tabs defaultValue="dashboard">
-          <TabsList className="mb-6 flex-wrap h-auto gap-1">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
-            <TabsTrigger value="wallet">Wallet</TabsTrigger>
-            <TabsTrigger value="withdrawals" className="relative">
-              Withdrawals
-              {taskPending > 0 && (
-                <span className="ml-1 bg-destructive text-destructive-foreground text-xs rounded-full px-1.5 py-0.5">
-                  {taskPending}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="referral-withdrawals" className="relative">
-              Referral W/D
-              {refPending > 0 && (
-                <span className="ml-1 bg-destructive text-destructive-foreground text-xs rounded-full px-1.5 py-0.5">
-                  {refPending}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="dashboard">
-            <DashboardTab />
-          </TabsContent>
-          <TabsContent value="tasks">
-            <TasksTab />
-          </TabsContent>
-          <TabsContent value="wallet">
-            <WalletTab />
-          </TabsContent>
-          <TabsContent value="withdrawals">
-            <WithdrawalTab type="task" />
-          </TabsContent>
-          <TabsContent value="referral-withdrawals">
-            <WithdrawalTab type="referral" />
-          </TabsContent>
-          <TabsContent value="users">
-            <UsersTab />
-          </TabsContent>
-        </Tabs>
-      </main>
+      </div>
     </div>
-  );
-}
-
-// ─── Admin Portal Root ─────────────────────────────────────────────────────────
-export default function AdminPortal() {
-  const [loggedIn, setLoggedIn] = useState(getAdminSession);
-  return loggedIn ? (
-    <AdminDashboard onLogout={() => setLoggedIn(false)} />
-  ) : (
-    <AdminLogin onLogin={() => setLoggedIn(true)} />
   );
 }
