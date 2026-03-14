@@ -9,6 +9,7 @@ export interface User {
   referralCoinBalance: number;
   referralCode: string;
   referredBy?: string;
+  hasCompletedFirstTask?: boolean;
   taskWithdrawalsToday: number;
   lastWithdrawalDate: string;
   createdAt: string;

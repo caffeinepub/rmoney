@@ -500,6 +500,106 @@ function HomeTab({ user }: { user: User }) {
         </Card>
       </div>
 
+      {/* Referral Bonus Card */}
+      {(() => {
+        const referralBonusEarned =
+          getUsers().filter(
+            (u) =>
+              u.referredBy === user.referralCode && u.hasCompletedFirstTask,
+          ).length * 5000;
+        return (
+          <div
+            data-ocid="home.referral_bonus.card"
+            className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-4 text-white shadow-lg"
+          >
+            <p className="text-xs font-bold opacity-80 mb-1">
+              🎁 REFERRAL BONUS EARNED
+            </p>
+            <p className="text-3xl font-bold">
+              ₹{(user.referralCoinBalance / 100).toFixed(2)}
+            </p>
+            <p className="text-xs opacity-90 mt-1">
+              +₹{(referralBonusEarned / 100).toFixed(0)} BONUS CREDITED
+            </p>
+            <p className="text-xs opacity-75 mt-0.5">
+              {
+                getUsers().filter(
+                  (u) =>
+                    u.referredBy === user.referralCode &&
+                    u.hasCompletedFirstTask,
+                ).length
+              }{" "}
+              FRIENDS COMPLETED TASKS • ₹50 EACH
+            </p>
+          </div>
+        );
+      })()}
+
+      {/* Pending / Approved Withdrawal Notifications */}
+      {(() => {
+        const myWithdrawals = getWithdrawals().filter(
+          (w) => w.userId === user.id,
+        );
+        const pendingCount = myWithdrawals.filter(
+          (w) => w.status === "pending",
+        ).length;
+        const recentApproved = myWithdrawals.find((w) => {
+          if (w.status !== "approved" || !w.processedAt) return false;
+          return (
+            Date.now() - new Date(w.processedAt).getTime() < 24 * 60 * 60 * 1000
+          );
+        });
+        return (
+          <>
+            {pendingCount > 0 && (
+              <div
+                data-ocid="home.pending_withdrawal.card"
+                className="rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 p-4 text-white shadow-md"
+              >
+                <p className="text-sm font-bold">
+                  ⏳ {pendingCount} WITHDRAWAL PENDING
+                </p>
+                <p className="text-xs opacity-90 mt-0.5">
+                  WAITING FOR ADMIN APPROVAL
+                </p>
+              </div>
+            )}
+            {recentApproved && (
+              <div
+                data-ocid="home.approved_withdrawal.card"
+                className="rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 p-4 text-white shadow-md"
+              >
+                <p className="text-sm font-bold">✅ WITHDRAWAL APPROVED</p>
+                <p className="text-xs opacity-90 mt-0.5">
+                  ₹{recentApproved.amountRs.toFixed(2)} SENT TO YOUR UPI
+                </p>
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {/* Pending Task Completions Card */}
+      {(() => {
+        const pendingTaskCount = getCompletions().filter(
+          (c) => c.userId === user.id && !c.adminConfirmed,
+        ).length;
+        return pendingTaskCount > 0 ? (
+          <div
+            data-ocid="home.pending_tasks.card"
+            className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-400 p-4 text-white shadow-md"
+          >
+            <p className="text-sm font-bold">
+              ⏳ {pendingTaskCount} TASK{pendingTaskCount > 1 ? "S" : ""}{" "}
+              PENDING ADMIN CONFIRMATION
+            </p>
+            <p className="text-xs opacity-90 mt-0.5">
+              COINS WILL BE CREDITED AFTER APPROVAL
+            </p>
+          </div>
+        ) : null;
+      })()}
+
       {/* Info Cards */}
       <Card className="bg-amber-50 border-amber-200">
         <CardContent className="pt-4 pb-4">
@@ -507,18 +607,19 @@ function HomeTab({ user }: { user: User }) {
             💡 How It Works
           </p>
           <ul className="text-xs text-amber-700 mt-2 space-y-1">
-            <li>• Complete Tasks To Earn Coins</li>
+            <li>• COMPLETE TASKS TO EARN COINS</li>
             <li>
-              • Refer Friends To Earn 500 Coins On Signup + ₹50 Per Task They
-              Complete
+              • REFER FRIEND — WHEN YOUR FRIEND COMPLETES 1 TASK, YOU GET 500
+              COINS
             </li>
             <li>
-              • When Your Friend Completes A Task → You Get ₹50 (Refer Bonus)
+              • WHEN YOUR FRIEND COMPLETES A TASK → YOU GET 500 COINS (REFER
+              BONUS)
             </li>
-            <li>• Your Friend Also Gets ₹20 Bonus On Task Completion</li>
-            <li>• 1000 Coins = ₹10 (Withdraw Via UPI)</li>
-            <li>• Min ₹10, Max ₹250 Per Withdrawal</li>
-            <li>• Max 5 Task Withdrawals Per Day</li>
+            <li>• YOUR FRIEND ALSO GETS 200 COINS ON TASK COMPLETION</li>
+            <li>• 1000 COINS = ₹10 (WITHDRAW VIA UPI)</li>
+            <li>• MIN ₹10, MAX ₹250 PER WITHDRAWAL</li>
+            <li>• ONLY 5 WITHDRAWALS ALLOWED PER DAY</li>
           </ul>
         </CardContent>
       </Card>
@@ -549,7 +650,7 @@ function RulesCollapsible({ rules }: { rules: string }) {
 
 function TasksTab({
   user,
-  onUserUpdate,
+  onUserUpdate: _onUserUpdate,
 }: { user: User; onUserUpdate: (u: User) => void }) {
   const tasks = getTasks()
     .filter((t) => t.active)
@@ -560,7 +661,7 @@ function TasksTab({
   );
   const completed = new Set(completionMap.keys());
 
-  const handleComplete = (taskId: string, coins: number) => {
+  const handleComplete = (taskId: string) => {
     if (completed.has(taskId)) return;
     const newCompletion = {
       id: generateId(),
@@ -569,11 +670,7 @@ function TasksTab({
       completedAt: new Date().toISOString(),
     };
     saveCompletions([...getCompletions(), newCompletion]);
-    const updated = { ...user, coinBalance: user.coinBalance + coins };
-    updateUser(updated);
-    onUserUpdate(updated);
-    const rsEarned = (coins / 100).toFixed(2);
-    toast.success(`🪙 +${coins} coins (₹${rsEarned}) earned!`);
+    toast.success("✅ TASK SUBMITTED — WAITING FOR ADMIN APPROVAL");
   };
 
   return (
@@ -604,16 +701,18 @@ function TasksTab({
                       <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">
                         {task.sequence}
                       </span>
-                      {done && (
-                        <Badge className="text-xs bg-emerald-100 text-emerald-700 border-0">
-                          ✓ Done
-                        </Badge>
-                      )}
-                      {completionMap.get(task.id)?.adminConfirmed === true && (
-                        <Badge className="text-xs bg-green-100 text-green-700 border-green-300">
-                          ✅ Admin Verified
-                        </Badge>
-                      )}
+                      {done &&
+                        completionMap.get(task.id)?.adminConfirmed === true && (
+                          <Badge className="text-xs bg-green-100 text-green-700 border-green-300">
+                            ✅ ADMIN VERIFIED
+                          </Badge>
+                        )}
+                      {done &&
+                        completionMap.get(task.id)?.adminConfirmed !== true && (
+                          <Badge className="text-xs bg-amber-100 text-amber-700 border-amber-300">
+                            ⏳ PENDING APPROVAL
+                          </Badge>
+                        )}
                     </div>
                     {task.apkImageUrl && (
                       <img
@@ -653,9 +752,7 @@ function TasksTab({
                         data-ocid={`user.tasks.complete_button.${idx + 1}`}
                         size="sm"
                         className="w-full bg-primary text-primary-foreground"
-                        onClick={() =>
-                          handleComplete(task.id, task.coinsReward)
-                        }
+                        onClick={() => handleComplete(task.id)}
                       >
                         Mark Complete
                       </Button>
@@ -682,18 +779,29 @@ function WalletTab({
   const [refUpi, setRefUpi] = useState(user.upiId ?? "");
   const [refAmountRs, setRefAmountRs] = useState("");
 
+  const isValidUpi = (upi: string) => {
+    // Must match pattern: validchars@validprovider (no random strings)
+    return /^[a-zA-Z0-9._-]{3,}@[a-zA-Z]{3,}$/.test(upi.trim());
+  };
+
   const saveUpi = () => {
+    if (user.upiId) return; // UPI ID is permanent, cannot be changed
+    if (!isValidUpi(upiSave)) {
+      toast.error("INVALID UPI ID! FORMAT: yourname@upi OR 9999999999@paytm");
+      return;
+    }
     const updated = { ...user, upiId: upiSave.trim() };
     updateUser(updated);
     onUserUpdate(updated);
-    toast.success("UPI ID saved!");
+    toast.success("UPI ID SAVED PERMANENTLY!");
   };
 
   const handleTaskWithdraw = () => {
     const amountRs = Number(taskAmountRs);
     const coins = Math.round(amountRs * 100);
 
-    if (!taskUpi.trim()) {
+    const effectiveTaskUpi = freshUser.upiId || taskUpi;
+    if (!effectiveTaskUpi.trim()) {
       toast.error("Enter your UPI ID");
       return;
     }
@@ -711,19 +819,25 @@ function WalletTab({
     }
 
     const today = todayStr();
-    const withdrawsToday =
-      user.lastWithdrawalDate === today ? user.taskWithdrawalsToday : 0;
-    if (withdrawsToday >= 5) {
-      toast.error("Daily withdrawal limit (5) reached");
+    // Count actual task withdrawals today from storage (not stale state)
+    const allWdrToday = getWithdrawals().filter(
+      (w) =>
+        w.userId === user.id &&
+        w.type === "task" &&
+        w.createdAt.startsWith(today),
+    ).length;
+    if (allWdrToday >= 5) {
+      toast.error("DAILY LIMIT REACHED — ONLY 5 WITHDRAWALS ALLOWED PER DAY");
       return;
     }
+    const withdrawsToday = allWdrToday;
 
     const req = {
       id: generateId(),
       userId: user.id,
       userName: user.name,
       userPhone: user.phone,
-      userUpiId: taskUpi.trim(),
+      userUpiId: effectiveTaskUpi.trim(),
       coins,
       amountRs,
       type: "task" as const,
@@ -747,7 +861,8 @@ function WalletTab({
     const amountRs = Number(refAmountRs);
     const coins = Math.round(amountRs * 100);
 
-    if (!refUpi.trim()) {
+    const effectiveRefUpi = freshUser.upiId || refUpi;
+    if (!effectiveRefUpi.trim()) {
       toast.error("Enter your UPI ID");
       return;
     }
@@ -770,7 +885,7 @@ function WalletTab({
       userId: user.id,
       userName: user.name,
       userPhone: user.phone,
-      userUpiId: refUpi.trim(),
+      userUpiId: effectiveRefUpi.trim(),
       coins,
       amountRs,
       type: "referral" as const,
@@ -828,21 +943,38 @@ function WalletTab({
       <Card>
         <CardContent className="pt-4 pb-4 space-y-2">
           <Label className="font-semibold">Your UPI ID</Label>
-          <div className="flex gap-2">
-            <Input
-              data-ocid="user.wallet.upi.input"
-              value={upiSave}
-              onChange={(e) => setUpiSave(e.target.value)}
-              placeholder="yourname@upi"
-              className="flex-1"
-            />
-            <Button
-              onClick={saveUpi}
-              className="bg-primary text-primary-foreground"
+          {freshUser.upiId ? (
+            <div
+              data-ocid="user.wallet.upi.locked"
+              className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2"
             >
-              Save
-            </Button>
-          </div>
+              <span className="text-lg">🔒</span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-amber-800 font-mono">
+                  {freshUser.upiId}
+                </p>
+                <p className="text-xs text-amber-600 font-semibold">
+                  UPI ID LOCKED - CANNOT BE CHANGED
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Input
+                data-ocid="user.wallet.upi.input"
+                value={upiSave}
+                onChange={(e) => setUpiSave(e.target.value)}
+                placeholder="yourname@upi"
+                className="flex-1"
+              />
+              <Button
+                onClick={saveUpi}
+                className="bg-primary text-primary-foreground"
+              >
+                Save
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -850,18 +982,41 @@ function WalletTab({
       <Card className="border-primary/30">
         <CardContent className="pt-4 pb-4 space-y-3">
           <p className="font-semibold text-sm">💰 Task Withdrawal</p>
-          <p className="text-xs text-muted-foreground">
-            Min ₹10 • Max ₹250 • 5/Day
-          </p>
+          {(() => {
+            const today = todayStr();
+            const usedToday = getWithdrawals().filter(
+              (w) =>
+                w.userId === user.id &&
+                w.type === "task" &&
+                w.createdAt.startsWith(today),
+            ).length;
+            const remaining = 5 - usedToday;
+            return (
+              <p
+                className={`text-xs font-semibold ${remaining === 0 ? "text-red-500" : "text-muted-foreground"}`}
+              >
+                MIN ₹10 • MAX ₹250 • {remaining}/5 WITHDRAWALS REMAINING TODAY
+              </p>
+            );
+          })()}
           <div>
             <Label className="text-xs">UPI ID</Label>
-            <Input
-              data-ocid="user.wallet.withdraw.upi.input"
-              value={taskUpi}
-              onChange={(e) => setTaskUpi(e.target.value)}
-              placeholder="Enter UPI ID For Payment"
-              className="mt-1"
-            />
+            {freshUser.upiId ? (
+              <Input
+                data-ocid="user.wallet.withdraw.upi.input"
+                value={freshUser.upiId}
+                disabled
+                className="mt-1 bg-amber-50 text-amber-800 font-mono"
+              />
+            ) : (
+              <Input
+                data-ocid="user.wallet.withdraw.upi.input"
+                value={taskUpi}
+                onChange={(e) => setTaskUpi(e.target.value)}
+                placeholder="Enter UPI ID For Payment"
+                className="mt-1"
+              />
+            )}
           </div>
           <div>
             <Label className="text-xs">Amount (₹)</Label>
@@ -898,13 +1053,22 @@ function WalletTab({
           </p>
           <div>
             <Label className="text-xs">UPI ID</Label>
-            <Input
-              data-ocid="user.wallet.referral_withdraw.upi.input"
-              value={refUpi}
-              onChange={(e) => setRefUpi(e.target.value)}
-              placeholder="Enter UPI ID For Payment"
-              className="mt-1"
-            />
+            {freshUser.upiId ? (
+              <Input
+                data-ocid="user.wallet.referral_withdraw.upi.input"
+                value={freshUser.upiId}
+                disabled
+                className="mt-1 bg-amber-50 text-amber-800 font-mono"
+              />
+            ) : (
+              <Input
+                data-ocid="user.wallet.referral_withdraw.upi.input"
+                value={refUpi}
+                onChange={(e) => setRefUpi(e.target.value)}
+                placeholder="Enter UPI ID For Payment"
+                className="mt-1"
+              />
+            )}
           </div>
           <div>
             <Label className="text-xs">Amount (₹)</Label>
@@ -969,6 +1133,16 @@ function WalletTab({
                     >
                       {w.status}
                     </Badge>
+                    {w.status === "approved" && (
+                      <p className="text-xs text-emerald-600 font-semibold mt-0.5">
+                        ✅ PAID VIA UPI
+                      </p>
+                    )}
+                    {w.status === "approved" && w.processedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(w.processedAt).toLocaleDateString()}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -987,9 +1161,15 @@ function WalletTab({
 
 // ─── Referral Tab ──────────────────────────────────────────────────────────────
 function ReferralTab({ user }: { user: User }) {
-  const referrals = getUsers().filter(
-    (u) => u.referredBy === user.referralCode,
-  );
+  const allCompletions = getCompletions();
+  const referrals = getUsers()
+    .filter((u) => u.referredBy === user.referralCode)
+    .map((u) => {
+      const hasCompletedTask = allCompletions.some((c) => c.userId === u.id);
+      const bonusEarned = u.hasCompletedFirstTask === true;
+      return { ...u, hasCompletedTask, bonusEarned };
+    });
+  const totalBonusEarned = referrals.filter((r) => r.bonusEarned).length * 5000;
 
   const copyCode = () => {
     navigator.clipboard.writeText(user.referralCode).then(() => {
@@ -1155,20 +1335,81 @@ function ReferralTab({ user }: { user: User }) {
       <Card className="bg-emerald-50 border-emerald-200">
         <CardContent className="pt-4 pb-4">
           <p className="text-sm font-semibold text-emerald-800 mb-2">
-            🎁 Referral Rewards
+            🎁 REFERRAL REWARDS
           </p>
           <ul className="text-xs text-emerald-700 space-y-1">
-            <li>• Share Your Unique Referral Code</li>
+            <li>• SHARE YOUR UNIQUE REFERRAL CODE</li>
             <li>
-              • Earn <strong>500 Coins (₹5)</strong> Per Friend Who Registers
+              • WHEN FRIEND COMPLETES FIRST TASK → YOU GET ₹50, FRIEND GETS ₹20
             </li>
-            <li>
-              • <strong>1000 coins = ₹10</strong>
-            </li>
-            <li>• Withdraw Min ₹10, Max ₹250 Via UPI In Wallet Tab</li>
+            <li>• WITHDRAW VIA UPI IN WALLET TAB (MIN ₹10, MAX ₹250)</li>
           </ul>
         </CardContent>
       </Card>
+
+      {/* Referral History */}
+      <div>
+        <p className="text-sm font-bold uppercase mb-2">
+          MY REFER LIST ({referrals.length})
+        </p>
+        {referrals.length === 0 ? (
+          <Card data-ocid="user.referral.empty_state">
+            <CardContent className="py-8 text-center text-muted-foreground text-sm">
+              NO FRIENDS REFERRED YET. SHARE YOUR CODE!
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {referrals.map((ref, idx) => (
+              <Card
+                key={ref.id}
+                data-ocid={`user.referral.item.${idx + 1}`}
+                className="border border-border"
+              >
+                <CardContent className="py-3 px-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-sm font-bold text-primary uppercase">
+                    {ref.name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold uppercase truncate">
+                      {ref.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      JOINED{" "}
+                      {new Date(ref.createdAt).toLocaleDateString("en-IN")}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    {ref.bonusEarned ? (
+                      <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300 border">
+                        ✅ BONUS EARNED
+                      </Badge>
+                    ) : ref.hasCompletedTask ? (
+                      <Badge className="text-[10px] bg-yellow-100 text-yellow-700 border-yellow-300 border">
+                        ⏳ TASK DONE
+                      </Badge>
+                    ) : (
+                      <Badge className="text-[10px] bg-gray-100 text-gray-500 border-gray-300 border">
+                        🔗 JOINED
+                      </Badge>
+                    )}
+                    {ref.bonusEarned && (
+                      <span className="text-[10px] font-bold text-emerald-600">
+                        +₹50
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+        {totalBonusEarned > 0 && (
+          <div className="mt-3 text-center text-xs font-bold text-emerald-700 bg-emerald-50 rounded-lg py-2">
+            TOTAL REFERRAL BONUS EARNED: ₹{(totalBonusEarned / 100).toFixed(2)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

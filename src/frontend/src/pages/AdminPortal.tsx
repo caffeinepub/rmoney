@@ -273,30 +273,54 @@ function DashboardTab() {
     saveCompletions(all);
     setCompletions(all);
 
-    // Referral bonus: give ₹50 (5000 coins) to referrer, ₹20 (2000 coins) to completing user
     if (completion) {
+      const task = getTasks().find((t) => t.id === completion.taskId);
+      const taskCoins = task?.coinsReward ?? 0;
       const allUsers = getUsers();
       const completingUser = allUsers.find((u) => u.id === completion.userId);
-      if (completingUser?.referredBy) {
-        const referrer = allUsers.find(
-          (u) => u.referralCode === completingUser.referredBy,
-        );
-        const updatedUsers = allUsers.map((u) => {
-          if (u.id === completingUser.id) {
-            return { ...u, referralCoinBalance: u.referralCoinBalance + 2000 }; // ₹20
-          }
-          if (referrer && u.id === referrer.id) {
-            return { ...u, referralCoinBalance: u.referralCoinBalance + 5000 }; // ₹50
-          }
-          return u;
-        });
-        saveUsers(updatedUsers);
-        setUsers(updatedUsers);
+
+      // Check if this is user's first confirmed completion
+      const priorConfirmed = all.filter(
+        (c) =>
+          c.userId === completion.userId &&
+          c.adminConfirmed &&
+          c.id !== completionId,
+      ).length;
+      const isFirstTask =
+        priorConfirmed === 0 && !completingUser?.hasCompletedFirstTask;
+
+      const updatedUsers = allUsers.map((u) => {
+        if (u.id === completingUser?.id) {
+          let refBonus = 0;
+          if (isFirstTask && u.referredBy) refBonus = 2000; // ₹20 friend bonus
+          return {
+            ...u,
+            coinBalance: u.coinBalance + taskCoins,
+            referralCoinBalance: u.referralCoinBalance + refBonus,
+            hasCompletedFirstTask: u.hasCompletedFirstTask || isFirstTask,
+          };
+        }
+        if (
+          isFirstTask &&
+          completingUser?.referredBy &&
+          u.referralCode === completingUser.referredBy
+        ) {
+          return { ...u, referralCoinBalance: u.referralCoinBalance + 5000 }; // ₹50 referrer bonus
+        }
+        return u;
+      });
+      saveUsers(updatedUsers);
+      setUsers(updatedUsers);
+
+      const creditedRs = (taskCoins / 100).toFixed(2);
+      if (isFirstTask && completingUser?.referredBy) {
         toast.success(
-          "Task confirmed! Referral bonuses awarded — Referrer +₹50, Friend +₹20",
+          `✅ TASK CONFIRMED! ₹${creditedRs} CREDITED TO USER WALLET + REFERRAL BONUSES AWARDED`,
         );
       } else {
-        toast.success("Task completion confirmed!");
+        toast.success(
+          `✅ TASK CONFIRMED! ₹${creditedRs} CREDITED TO USER WALLET`,
+        );
       }
     } else {
       toast.success("Task completion confirmed!");
@@ -314,12 +338,23 @@ function DashboardTab() {
             </p>
           </CardContent>
         </Card>
-        <Card className="border-accent/30">
+        <Card
+          className={
+            pendingCount > 0 ? "border-red-400 bg-red-50" : "border-accent/30"
+          }
+        >
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Pending Withdrawals</p>
-            <p className="text-2xl font-bold text-accent-foreground">
+            <p
+              className={`text-2xl font-bold ${pendingCount > 0 ? "text-red-600" : "text-accent-foreground"}`}
+            >
               {pendingCount}
             </p>
+            {pendingCount > 0 && (
+              <p className="text-xs text-red-500 font-semibold mt-1">
+                TAP WITHDRAWALS TAB TO PROCESS
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -341,6 +376,9 @@ function DashboardTab() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Live Task Completions</CardTitle>
+          <p className="text-xs text-amber-600 font-semibold">
+            ⚠️ ADMIN MUST CONFIRM TO CREDIT USER COINS
+          </p>
         </CardHeader>
         <CardContent>
           <Table>
@@ -985,9 +1023,18 @@ function WithdrawalTab({ type }: { type: "task" | "referral" }) {
         : w,
     );
     saveWithdrawals(all);
+    // Trigger refresh signal on user side
+    const allUsers = getUsers();
+    const targetUser = allUsers.find((u) => u.id === confirmItem.userId);
+    if (targetUser) {
+      saveUsers(allUsers); // trigger refresh signal
+    }
+    const approvedItem = confirmItem;
     setConfirmItem(null);
     refresh();
-    toast.success(`Withdrawal of ₹${confirmItem.amountRs} approved!`);
+    toast.success(
+      `✅ ₹${approvedItem.amountRs} SENT TO ${approvedItem.userUpiId} - ADMIN WALLET DEBITED`,
+    );
   };
 
   const handleReject = () => {
@@ -1194,10 +1241,23 @@ function WithdrawalTab({ type }: { type: "task" | "referral" }) {
                   ₹{confirmItem.amountRs.toFixed(2)}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground pt-2">
-                Send ₹{confirmItem.amountRs.toFixed(2)} to UPI:{" "}
-                <strong>{confirmItem.userUpiId}</strong>
-              </p>
+              <div className="mt-3 rounded-lg bg-emerald-900/30 border border-emerald-600/40 p-3 space-y-1">
+                <p className="text-xs font-bold text-emerald-400">
+                  PAYMENT WILL BE SENT TO UPI:
+                </p>
+                <p className="text-sm font-mono font-bold text-emerald-300">
+                  {confirmItem.userUpiId}
+                </p>
+              </div>
+              <div className="rounded-lg bg-red-900/30 border border-red-600/40 p-3 space-y-1">
+                <p className="text-xs font-bold text-red-400">
+                  ADMIN WALLET AFTER DEDUCTION:
+                </p>
+                <p className="text-sm font-bold text-red-300">
+                  ₹
+                  {(getAdminWallet().balance - confirmItem.amountRs).toFixed(2)}
+                </p>
+              </div>
             </div>
           )}
           <DialogFooter>
