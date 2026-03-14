@@ -8,19 +8,20 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { User } from "../types";
 import {
+  clearOTPForPhone,
   generateId,
   generateOTP,
   generateReferralCode,
   generateUserId,
   getCompletions,
-  getOTPStore,
+  getOTPForPhone,
   getTasks,
   getUserById,
   getUserSession,
   getUsers,
   getWithdrawals,
   saveCompletions,
-  saveOTPStore,
+  saveOTPForPhone,
   saveUsers,
   saveWithdrawals,
   setUserSession,
@@ -35,7 +36,6 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
   const [lPhone, setLPhone] = useState("");
   const [lOtp, setLOtp] = useState("");
   const [lOtpSent, setLOtpSent] = useState(false);
-  const [lDisplayOtp, setLDisplayOtp] = useState("");
   // Register state
   const [rName, setRName] = useState("");
   const [rPhone, setRPhone] = useState("");
@@ -46,7 +46,6 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
   });
   const [rOtp, setROtp] = useState("");
   const [rOtpSent, setROtpSent] = useState(false);
-  const [rDisplayOtp, setRDisplayOtp] = useState("");
 
   const sendLoginOtp = () => {
     if (!lPhone || lPhone.length < 10) {
@@ -60,23 +59,17 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
       return;
     }
     const otp = generateOTP();
-    saveOTPStore({ phone: lPhone, otp, expiry: Date.now() + 5 * 60 * 1000 });
-    setLDisplayOtp(otp);
-    toast.info(`Your OTP (demo): ${otp}`, { duration: 30000 });
+    saveOTPForPhone(lPhone, otp);
+    toast.success("OTP sent to your mobile number. Valid for 10 minutes.");
     setLOtpSent(true);
   };
 
   const verifyLoginOtp = () => {
-    const store = getOTPStore();
-    if (
-      store &&
-      store.phone === lPhone &&
-      store.otp === lOtp &&
-      store.expiry > Date.now()
-    ) {
+    const store = getOTPForPhone(lPhone);
+    if (store && store.otp === lOtp) {
       const user = getUsers().find((u) => u.phone === lPhone);
       if (user) {
-        saveOTPStore(null);
+        clearOTPForPhone(lPhone);
         setUserSession(user.id);
         onLogin(user.id);
         toast.success(`Welcome back, ${user.name}!`);
@@ -101,21 +94,15 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
       return;
     }
     const otp = generateOTP();
-    saveOTPStore({ phone: rPhone, otp, expiry: Date.now() + 5 * 60 * 1000 });
-    setRDisplayOtp(otp);
-    toast.info(`Your OTP (demo): ${otp}`, { duration: 30000 });
+    saveOTPForPhone(rPhone, otp);
+    toast.success("OTP sent to your mobile number. Valid for 10 minutes.");
     setROtpSent(true);
   };
 
   const verifyRegisterOtp = () => {
-    const store = getOTPStore();
-    if (
-      store &&
-      store.phone === rPhone &&
-      store.otp === rOtp &&
-      store.expiry > Date.now()
-    ) {
-      saveOTPStore(null);
+    const store = getOTPForPhone(rPhone);
+    if (store && store.otp === rOtp) {
+      clearOTPForPhone(rPhone);
       const newUser: User = {
         id: generateUserId(),
         name: rName.trim(),
@@ -217,18 +204,6 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                   </Button>
                 ) : (
                   <>
-                    {/* OTP Display Box */}
-                    <div className="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-3 text-center">
-                      <p className="text-xs text-emerald-700 font-medium mb-1">
-                        YOUR OTP CODE
-                      </p>
-                      <p className="text-3xl font-bold font-mono tracking-widest text-emerald-600">
-                        {lDisplayOtp}
-                      </p>
-                      <p className="text-xs text-emerald-600 mt-1">
-                        Enter this code below
-                      </p>
-                    </div>
                     <div>
                       <Label>Enter OTP</Label>
                       <Input
@@ -251,7 +226,6 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                       className="text-xs text-primary w-full text-center"
                       onClick={() => {
                         setLOtpSent(false);
-                        setLDisplayOtp("");
                       }}
                     >
                       Resend OTP
@@ -352,18 +326,6 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                   </Button>
                 ) : (
                   <>
-                    {/* OTP Display Box */}
-                    <div className="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-3 text-center">
-                      <p className="text-xs text-emerald-700 font-medium mb-1">
-                        YOUR OTP CODE
-                      </p>
-                      <p className="text-3xl font-bold font-mono tracking-widest text-emerald-600">
-                        {rDisplayOtp}
-                      </p>
-                      <p className="text-xs text-emerald-600 mt-1">
-                        Enter this code below
-                      </p>
-                    </div>
                     <div>
                       <Label>Enter OTP</Label>
                       <Input
@@ -385,7 +347,6 @@ function AuthScreen({ onLogin }: { onLogin: (userId: string) => void }) {
                       className="text-xs text-primary w-full text-center"
                       onClick={() => {
                         setROtpSent(false);
-                        setRDisplayOtp("");
                       }}
                     >
                       Resend OTP
@@ -780,14 +741,21 @@ function WalletTab({
   const [refAmountRs, setRefAmountRs] = useState("");
 
   const isValidUpi = (upi: string) => {
-    // Must match pattern: validchars@validprovider (no random strings)
-    return /^[a-zA-Z0-9._-]{3,}@[a-zA-Z]{3,}$/.test(upi.trim());
+    // Formats: 9999999999@paytm | name@upi | name.surname@okaxis etc.
+    // prefix: digits or name chars, min 3, then @, then provider min 2 chars
+    const trimmed = upi.trim();
+    if (!trimmed.includes("@")) return false;
+    const [prefix, provider] = trimmed.split("@");
+    if (!prefix || !provider) return false;
+    const validPrefix = /^[a-zA-Z0-9._-]{3,}$/.test(prefix);
+    const validProvider = /^[a-zA-Z]{2,}$/.test(provider);
+    return validPrefix && validProvider;
   };
 
   const saveUpi = () => {
     if (user.upiId) return; // UPI ID is permanent, cannot be changed
     if (!isValidUpi(upiSave)) {
-      toast.error("INVALID UPI ID! FORMAT: yourname@upi OR 9999999999@paytm");
+      toast.error("INVALID UPI ID! FORMAT: 9053405019@paytm OR name@upi");
       return;
     }
     const updated = { ...user, upiId: upiSave.trim() };

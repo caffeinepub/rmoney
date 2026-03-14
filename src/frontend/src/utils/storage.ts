@@ -179,3 +179,30 @@ export function generateOTP(): string {
 export function todayStr(): string {
   return new Date().toISOString().split("T")[0];
 }
+
+// ─── Per-phone OTP store (10-minute expiry) ───────────────────────────────────
+const OTP_MAP_KEY = "rmoney_otp_map";
+type OTPEntry = { otp: string; expiry: number };
+
+export function saveOTPForPhone(phone: string, otp: string): void {
+  const map = get<Record<string, OTPEntry>>(OTP_MAP_KEY, {});
+  map[phone] = { otp, expiry: Date.now() + 10 * 60 * 1000 };
+  set(OTP_MAP_KEY, map);
+}
+
+export function getOTPForPhone(phone: string): OTPEntry | null {
+  const map = get<Record<string, OTPEntry>>(OTP_MAP_KEY, {});
+  const entry = map[phone];
+  if (!entry) return null;
+  if (entry.expiry < Date.now()) {
+    clearOTPForPhone(phone);
+    return null;
+  }
+  return entry;
+}
+
+export function clearOTPForPhone(phone: string): void {
+  const map = get<Record<string, OTPEntry>>(OTP_MAP_KEY, {});
+  delete map[phone];
+  set(OTP_MAP_KEY, map);
+}
